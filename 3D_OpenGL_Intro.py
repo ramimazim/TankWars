@@ -9,7 +9,37 @@ fovY = 120  # Field of view
 GRID_LENGTH = 600  # Length of grid lines
 rand_var = 423
 
-
+target=[0,0]
+player_pos = [0,0,0]
+player_angle=0.0
+bullets=[]
+def draw_bullet():
+    global bullets
+    glColor3f(1, 0, 0)
+    for i in range(len(bullets) // 6):
+        glPushMatrix()
+        glTranslatef(bullets[i*6], bullets[i*6+1], bullets[i*6+2])
+        glutSolidCube(5)
+        glPopMatrix()   
+def drawTarget():
+    global target
+    glColor3f(1, 0, 0)  # red
+    glPushMatrix()
+    glTranslatef(target[0], target[1], 0)
+    glutSolidSphere(5, 10, 10)  # small sphere marker
+    glPopMatrix()
+def mortar_shoot(target):
+    global bullets, player_pos, death
+    if death:
+        return
+    px, py, pz = player_pos
+    tx, ty = target
+    g = -0.1    # gravity (tune for realism)
+    T = 100        # flight time in frames (higher = slower arc)
+    dx = (tx - px) / T
+    dy = (ty - py) / T
+    dz = (0 - pz - 0.5 * g * (T**2)) / T   # ensures z ends at 0
+    bullets.extend([px, py, pz, dx, dy, dz])
 def draw_text(x, y, text, font=GLUT_BITMAP_HELVETICA_18):
     glColor3f(1,1,1)
     glMatrixMode(GL_PROJECTION)
@@ -61,29 +91,16 @@ def draw_shapes():
 
 
 def keyboardListener(key, x, y):
-    """
-    Handles keyboard inputs for player movement, gun rotation, camera updates, and cheat mode toggles.
-    """
-    # # Move forward (W key)
-    # if key == b'w':  
-
-    # # Move backward (S key)
-    # if key == b's':
-
-    # # Rotate gun left (A key)
-    # if key == b'a':
-
-    # # Rotate gun right (D key)
-    # if key == b'd':
-
-    # # Toggle cheat mode (C key)
-    # if key == b'c':
-
-    # # Toggle cheat vision (V key)
-    # if key == b'v':
-
-    # # Reset the game if R key is pressed
-    # if key == b'r':
+    global player_pos, player_angle,fovY,camera_pos,target
+    step = 10  # how much the target moves each press
+    if key == b'j':  # move up
+        target[1] += step
+    elif key == b'u':  # move down
+        target[1] -= step
+    elif key == b'k':  # move left
+        target[0] -= step
+    elif key == b'h':  # move right
+        target[0] += step
 
 
 def specialKeyListener(key, x, y):
@@ -110,14 +127,9 @@ def specialKeyListener(key, x, y):
 
 
 def mouseListener(button, state, x, y):
-    """
-    Handles mouse inputs for firing bullets (left click) and toggling camera mode (right click).
-    """
-        # # Left mouse button fires a bullet
-        # if button == GLUT_LEFT_BUTTON and state == GLUT_DOWN:
-
-        # # Right mouse button toggles camera tracking mode
-        # if button == GLUT_RIGHT_BUTTON and state == GLUT_DOWN:
+    global bullets, player_pos, player_angle,camera_pos
+    if button == GLUT_LEFT_BUTTON and state == GLUT_DOWN and death==False:
+        mortar_shoot(target)
 
 
 def setupCamera():
@@ -140,13 +152,70 @@ def setupCamera():
               0, 0, 1)  # Up vector (z-axis)
 
 
-def idle():
-    """
-    Idle function that runs continuously:
-    - Triggers screen redraw for real-time updates.
-    """
-    # Ensure the screen updates with the latest changes
+def animate():
+    global bullets, miss,player_pos,player_angle
     glutPostRedisplay()
+    x,y,z=player_pos
+    # if cheat==True:
+    #     player_angle+=1
+    #     if player_angle>=360:
+    #         player_angle-=360
+    # if life==0 or miss==10:
+    #     death=True
+    # if grow==True:
+    #     bodyradius += scaleval
+    #     headradius += scaleval * 0.5
+    #     if bodyradius > 30:
+    #         grow = False
+    # else:
+    #     bodyradius -= scaleval
+    #     headradius -= scaleval * 0.5
+    #     if bodyradius < 15:
+    #         grow = True
+    # for i in range(5):
+    #     # Move enemy towards player
+    #     ex = enemy[i*2]ddd
+    #     ey = enemy[i*2+1]
+    #     px, py, pz = player_pos
+    #     speed=0.05
+    #     # Compute angle from enemy to player
+    #     angle = math.atan2(py - ey, px - ex)
+    #     # Move enemy towards player using trig
+    #     ex += speed * math.cos(angle)
+    #     ey += speed * math.sin(angle)
+    #     enemy[i*2] = ex
+    #     enemy[i*2+1] = ey
+    #     if abs(ex - px) < 10 and abs(ey - py) < 10:
+    #         life -= 1
+    #         enemy[i*2] = random.randint(-GRID_LENGTH+10, GRID_LENGTH-10)
+    #         enemy[i*2+1] = random.randint(-GRID_LENGTH+10, GRID_LENGTH-10) 
+    #         enemyflag[i]=False
+    #     if cheat==True:
+    #         rad = math.radians(player_angle)
+    #         xinc=-math.sin(rad)
+    #         yinc=math.cos(rad)
+    #         a,b,c=player_pos
+    #         while -GRID_LENGTH<a+xinc<GRID_LENGTH and -GRID_LENGTH<b+yinc<GRID_LENGTH:
+    #             if abs(ex - a) < 10 and abs(ey - b) < 10 and enemyflag[i]==False:
+    #                 enemyflag[i]=True
+    #                 shoot()
+    #                 break
+    #             a+=xinc
+    #             b+=yinc
+    g = -0.1  # gravity (must match mortar_shoot)
+    new_bullets = []
+    for i in range(len(bullets) // 6):
+        x  = bullets[i*6]   + bullets[i*6+3]
+        y  = bullets[i*6+1] + bullets[i*6+4]
+        z  = bullets[i*6+2] + bullets[i*6+5]
+        dx = bullets[i*6+3]
+        dy = bullets[i*6+4]
+        dz = bullets[i*6+5] + g   # gravity applied
+        if z >= 0:  # still above ground
+            new_bullets.extend([x, y, z, dx, dy, dz])
+        else:
+            miss += 1  # bullet hit the ground
+    bullets = new_bullets
 
 
 def showScreen():
@@ -217,7 +286,7 @@ def main():
     glutKeyboardFunc(keyboardListener)  # Register keyboard listener
     glutSpecialFunc(specialKeyListener)
     glutMouseFunc(mouseListener)
-    glutIdleFunc(idle)  # Register the idle function to move the bullet automatically
+    glutIdleFunc(animate)  # Register the idle function to move the bullet automatically
 
     glutMainLoop()  # Enter the GLUT main loop
 
