@@ -1,15 +1,18 @@
 from OpenGL.GL import *
 from OpenGL.GLUT import *
 from OpenGL.GLU import *
-
+import math
 # Camera-related variables
 camera_pos = (0,500,500)
 
 fovY = 120  # Field of view
 GRID_LENGTH = 600  # Length of grid lines
 rand_var = 423
-p_pos=(0,0,0) 
+p_pos=[0,0,0]
 p_rot=0
+target=[0,0]
+bullets=[]
+miss=0
 
 def draw_text(x, y, text, font=GLUT_BITMAP_HELVETICA_18):
     glColor3f(1,1,1)
@@ -99,36 +102,51 @@ def draw_tank():
     x, y, z = p_pos
     glPushMatrix()
     glTranslatef(x, y, z)
-    glRotatef(p_rot, 0, 0, 1)
+    
+    # Rotate tank so that base angle 0 aligns with +Y axis
+    glRotatef(p_rot + 90, 0, 0, 1)   # <<< changed here
 
     # Base (blue, taller)
     glPushMatrix()
-    glColor3f(0, 0, 1)  # blue
-    glScalef(4, 2, 2)  # longer, wider, taller
+    glColor3f(0, 0, 1)
+    glScalef(4, 2, 2)
     glutSolidCube(30)
     glPopMatrix()
 
-    # Turret (red, smaller, sits on top of base)
+    # Turret (red, smaller)
     glPushMatrix()
-    glColor3f(1, 0, 0)  # red
-    glTranslatef(0, 0, 40)  # raised to sit above base
-    glScalef(2, 1.5, 1)  # smaller than base
+    glColor3f(1, 0, 0)
+    glTranslatef(0, 0, 40)
+    glScalef(2, 1.5, 1)
     glutSolidCube(20)
     glPopMatrix()
 
-    # Gun (black, on the shorter face of the turret)
+    # Gun (black, facing forward)
     glPushMatrix()
-    glColor3f(0, 0, 0)  # black
-    glTranslatef(20, 0, 40)  # attach to side of turret (X-axis face)
-    glRotatef(90, 0, 1, 0)  # rotate to point forward along X
+    glColor3f(0, 0, 0)
+    glTranslatef(20, 0, 40)
+    glRotatef(90, 0, 1, 0)
     gluCylinder(gluNewQuadric(), 3, 3, 40, 10, 10)
     glPopMatrix()
 
     glPopMatrix()
-
-
+def draw_bullet():
+    global bullets
+    glColor3f(1, 0, 0)
+    for i in range(len(bullets) // 6):
+        glPushMatrix()
+        glTranslatef(bullets[i*6], bullets[i*6+1], bullets[i*6+2])
+        glutSolidCube(5)
+        glPopMatrix() 
+def drawTarget():
+    global target
+    glColor3f(0, 0, 0)  # black
+    glPushMatrix()
+    glTranslatef(target[0], target[1], 0)
+    glutSolidSphere(5, 10, 10)  # small sphere marker
+    glPopMatrix()
 def keyboardListener(key, x, y):
-    global player_pos, player_angle,fovY,camera_pos,target
+    global p_pos,p_rot,fovY,camera_pos,target
     step = 10  # how much the target moves each press
     if key == b'j':  # move up
         target[1] += step
@@ -138,6 +156,29 @@ def keyboardListener(key, x, y):
         target[0] -= step
     elif key == b'h':  # move right
         target[0] += step
+    speed = 10.0
+    if key == b'w':   # move forward in facing direction   
+        rad = math.radians(p_rot)
+        xinc=speed*-math.sin(rad)
+        yinc=speed*math.cos(rad)
+        if -GRID_LENGTH+20<p_pos[0]+xinc<GRID_LENGTH-20 and -GRID_LENGTH+20<p_pos[1]+yinc<GRID_LENGTH-20:
+            p_pos[0] += xinc   # X movement
+            p_pos[1] += yinc   # Y movement
+    if key == b's':   # move backward
+        rad = math.radians(p_rot)
+        xinc=speed*-math.sin(rad)
+        yinc=speed*math.cos(rad)
+        if -GRID_LENGTH+20<p_pos[0]-xinc<GRID_LENGTH-20 and -GRID_LENGTH+20<p_pos[1]-yinc<GRID_LENGTH-20:
+            p_pos[0] -= xinc   # X movement
+            p_pos[1] -= yinc   # Y movement
+    if key == b'a':   # rotate anticlockwise
+        p_rot += 5
+        if p_rot==360:
+            p_rot=0
+    if key == b'd':   # rotate clockwise
+        p_rot -= 5
+        if p_rot==-5:
+            p_rot=355    
 
 
 def specialKeyListener(key, x, y):
@@ -164,11 +205,31 @@ def specialKeyListener(key, x, y):
 
 
 def mouseListener(button, state, x, y):
-    global bullets, player_pos, player_angle,camera_pos
-    if button == GLUT_LEFT_BUTTON and state == GLUT_DOWN and death==False:
+    global bullets, p_pos, p_rot,camera_pos
+    if button == GLUT_LEFT_BUTTON and state == GLUT_DOWN:
         mortar_shoot(target)
-
-
+def mortar_shoot(target):
+    global bullets,p_pos
+    px, py, pz = p_pos
+    tx, ty = target
+    g = -0.1    # gravity (tune for realism)
+    T = 100        # flight time in frames (higher = slower arc)
+    dx = (tx - px) / T
+    dy = (ty - py) / T
+    dz = (0 - pz - 0.5 * g * (T**2)) / T   # ensures z ends at 0
+    bullets.extend([px, py, pz, dx, dy, dz])
+def straight_shoot():
+    global bullets, p_pos, p_rot
+    rad = math.radians(p_rot)
+    speed = 2.0
+    x,y,z=p_pos
+    dx,dy,dz= speed * -math.sin(rad), speed * math.cos(rad),1
+    bullets.append(x)
+    bullets.append(y)
+    bullets.append(z)
+    bullets.append(dx)
+    bullets.append(dy)  
+    bullets.append(dz)
 def setupCamera():
     """
     Configures the camera's projection and view settings.
@@ -190,9 +251,9 @@ def setupCamera():
 
 
 def animate():
-    global bullets, miss,player_pos,player_angle
+    global bullets,p_pos,p_rot,miss
     glutPostRedisplay()
-    x,y,z=player_pos
+    x,y,z=p_pos
     # if cheat==True:
     #     player_angle+=1
     #     if player_angle>=360:
@@ -280,7 +341,8 @@ def showScreen():
     drawgrid()
     drawwall()
     draw_tank()
-
+    draw_bullet()
+    drawTarget()
     # Swap buffers for smooth rendering (double buffering)
     glutSwapBuffers()
 
