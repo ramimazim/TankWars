@@ -8,7 +8,8 @@ camera_pos = (0,500,500)
 fovY = 120  # Field of view
 GRID_LENGTH = 600  # Length of grid lines
 rand_var = 423
-
+p_pos=(0,0,0) 
+p_rot=0
 
 def draw_text(x, y, text, font=GLUT_BITMAP_HELVETICA_18):
     glColor3f(1,1,1)
@@ -36,28 +37,94 @@ def draw_text(x, y, text, font=GLUT_BITMAP_HELVETICA_18):
     glMatrixMode(GL_MODELVIEW)
 
 
-def draw_shapes():
 
-    glPushMatrix()  # Save the current matrix state
-    glColor3f(1, 0, 0)
-    glTranslatef(0, 0, 0)  
-    glutSolidCube(60) # Take cube size as the parameter
-    glTranslatef(0, 0, 100) 
-    glColor3f(0, 1, 0)
-    glutSolidCube(60) 
+def drawwall():
+    wall_height = 100 
+    #WALL1
+    glBegin(GL_QUADS)
+    glVertex3f(-GRID_LENGTH, -GRID_LENGTH, 0)
+    glVertex3f(-GRID_LENGTH,  GRID_LENGTH, 0)
+    glVertex3f(-GRID_LENGTH,  GRID_LENGTH, wall_height)
+    glVertex3f(-GRID_LENGTH, -GRID_LENGTH, wall_height)
+    glColor3f(0,0,1)
+    glEnd()
 
-    glColor3f(1, 1, 0)
-    glScalef(2, 2, 2)
-    gluCylinder(gluNewQuadric(), 40, 5, 150, 10, 10)  # parameters are: quadric, base radius, top radius, height, slices, stacks
-    glTranslatef(100, 0, 100) 
-    glRotatef(90, 0, 1, 0)  # parameters are: angle, x, y, z
-    gluCylinder(gluNewQuadric(), 40, 5, 150, 10, 10)
+    #WALL2
+    glBegin(GL_QUADS)
+    glVertex3f(GRID_LENGTH, -GRID_LENGTH, 0)
+    glVertex3f(GRID_LENGTH,  GRID_LENGTH, 0)
+    glVertex3f(GRID_LENGTH,  GRID_LENGTH, wall_height)
+    glVertex3f(GRID_LENGTH, -GRID_LENGTH, wall_height)
+    glColor3f(0,1,0)
+    glEnd()
 
-    glColor3f(0, 1, 1)
-    glTranslatef(300, 0, 100) 
-    gluSphere(gluNewQuadric(), 80, 10, 10)  # parameters are: quadric, radius, slices, stacks
+    #WALL3
+    glBegin(GL_QUADS)
+    glVertex3f(-GRID_LENGTH, GRID_LENGTH, 0)
+    glVertex3f(GRID_LENGTH,  GRID_LENGTH, 0)
+    glVertex3f(GRID_LENGTH,  GRID_LENGTH, wall_height)
+    glVertex3f(-GRID_LENGTH, GRID_LENGTH, wall_height)
+    glColor3f(1,0,0)
+    glEnd()
 
-    glPopMatrix()  # Restore the previous matrix state
+    #WALL4
+    glBegin(GL_QUADS)
+    glVertex3f(-GRID_LENGTH, -GRID_LENGTH, 0)
+    glVertex3f(GRID_LENGTH,  -GRID_LENGTH, 0)
+    glVertex3f(GRID_LENGTH,  -GRID_LENGTH, wall_height)
+    glVertex3f(-GRID_LENGTH, -GRID_LENGTH, wall_height)
+    glColor3f(1,1,1)
+    glEnd()
+
+def drawgrid():
+    tsize = 60  
+    num_tiles = GRID_LENGTH*2//tsize
+
+    for i in range(-GRID_LENGTH, GRID_LENGTH, tsize):
+        for j in range(-GRID_LENGTH, GRID_LENGTH, tsize):
+            if ((i + j) // tsize)%2==0:
+                glColor3f(1.0, 1.0, 1.0)
+            else:
+                glColor3f(0.7, 0.4, 0.6)
+
+            glBegin(GL_QUADS)
+            glVertex3f(i,j,0)
+            glVertex3f(i+tsize,j,0)
+            glVertex3f(i+tsize,j+tsize,0)
+            glVertex3f(i,j+tsize,0)
+            glEnd()
+
+def draw_tank():
+    global p_pos, p_rot
+    x, y, z = p_pos
+    glPushMatrix()
+    glTranslatef(x, y, z)
+    glRotatef(p_rot, 0, 0, 1)
+
+    # Base (blue, taller)
+    glPushMatrix()
+    glColor3f(0, 0, 1)  # blue
+    glScalef(4, 2, 2)  # longer, wider, taller
+    glutSolidCube(30)
+    glPopMatrix()
+
+    # Turret (red, smaller, sits on top of base)
+    glPushMatrix()
+    glColor3f(1, 0, 0)  # red
+    glTranslatef(0, 0, 40)  # raised to sit above base
+    glScalef(2, 1.5, 1)  # smaller than base
+    glutSolidCube(20)
+    glPopMatrix()
+
+    # Gun (black, on the shorter face of the turret)
+    glPushMatrix()
+    glColor3f(0, 0, 0)  # black
+    glTranslatef(20, 0, 40)  # attach to side of turret (X-axis face)
+    glRotatef(90, 0, 1, 0)  # rotate to point forward along X
+    gluCylinder(gluNewQuadric(), 3, 3, 40, 10, 10)
+    glPopMatrix()
+
+    glPopMatrix()
 
 
 def keyboardListener(key, x, y):
@@ -162,44 +229,18 @@ def showScreen():
 
     setupCamera()  # Configure camera perspective
 
-    # Draw a random points
-    glPointSize(20)
-    glBegin(GL_POINTS)
-    glVertex3f(-GRID_LENGTH, GRID_LENGTH, 0)
-    glEnd()
-
-    # Draw the grid (game floor)
-    glBegin(GL_QUADS)
-    
-    glColor3f(1, 1, 1)
-    glVertex3f(-GRID_LENGTH, GRID_LENGTH, 0)
-    glVertex3f(0, GRID_LENGTH, 0)
-    glVertex3f(0, 0, 0)
-    glVertex3f(-GRID_LENGTH, 0, 0)
-
-    glVertex3f(GRID_LENGTH, -GRID_LENGTH, 0)
-    glVertex3f(0, -GRID_LENGTH, 0)
-    glVertex3f(0, 0, 0)
-    glVertex3f(GRID_LENGTH, 0, 0)
 
 
-    glColor3f(0.7, 0.5, 0.95)
-    glVertex3f(-GRID_LENGTH, -GRID_LENGTH, 0)
-    glVertex3f(-GRID_LENGTH, 0, 0)
-    glVertex3f(0, 0, 0)
-    glVertex3f(0, -GRID_LENGTH, 0)
 
-    glVertex3f(GRID_LENGTH, GRID_LENGTH, 0)
-    glVertex3f(GRID_LENGTH, 0, 0)
-    glVertex3f(0, 0, 0)
-    glVertex3f(0, GRID_LENGTH, 0)
-    glEnd()
 
     # Display game info text at a fixed screen position
     draw_text(10, 770, f"A Random Fixed Position Text")
     draw_text(10, 740, f"See how the position and variable change?: {rand_var}")
 
-    draw_shapes()
+
+    drawgrid()
+    drawwall()
+    draw_tank()
 
     # Swap buffers for smooth rendering (double buffering)
     glutSwapBuffers()
