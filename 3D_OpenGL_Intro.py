@@ -766,11 +766,12 @@ def update_bullets(shooter, target):
 
 
 def animate():
-    global tank1, tank2, nuke_active, nuke_pos, nuke_radius
+    global tank1, tank2, nuke_active, nuke_pos, nuke_radius, level
     check_powerup_pickup(tank1)
     check_powerup_pickup(tank2)
-    check_nuke_powerup_pickup(tank1)
-    check_nuke_powerup_pickup(tank2)
+    if level == 2:
+        check_nuke_powerup_pickup(tank1)
+        check_nuke_powerup_pickup(tank2)
     if tank1 is not None and tank2 is not None:
         update_bullets(tank1, tank2)
         update_bullets(tank2, tank1)
