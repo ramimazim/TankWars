@@ -9,9 +9,10 @@ camera_pos = (500,0, 200)
 fovY = 120
 GRID_LENGTH = 600
 gLen = 300
-level = 1
+level = 2
 grassList = []
-treelist = []
+treeList = []
+wall = [] 
 cangle = 0
 radius = 500
 
@@ -64,10 +65,9 @@ class Tank:
         self.bullet_color = bullet_color
         self.bullets = []  # flat array of [x,y,z, dx,dy,dz, g_per_frame]
         self.target_distance = 300  # how far ahead the mortar crosshair is
-        self.score=0
+        self.score = 0
 
     def muzzle_world_pos(self):
-        """Approximate muzzle position in world space (front of turret)."""
         rad = math.radians(self.rot)
         forward_x = -math.sin(rad)
         forward_y =  math.cos(rad)
@@ -77,7 +77,6 @@ class Tank:
         return x, y, z
 
     def target_world_pos(self):
-        """Crosshair directly in front of the tank at target_distance."""
         rad = math.radians(self.rot)
         forward_x = -math.sin(rad)
         forward_y =  math.cos(rad)
@@ -91,13 +90,11 @@ class Tank:
         glTranslatef(x, y, z)
         glRotatef(self.rot + 90, 0, 0, 1)
 
-        # Base (frustum)
         glPushMatrix()
         glColor3f(*self.color_base)
         gluCylinder(gluNewQuadric(), 70, 20, 60, 30, 30)
         glPopMatrix()
 
-        # Turret (cube)
         glPushMatrix()
         glColor3f(*self.color_turret)
         glTranslatef(0, 0, 50)
@@ -105,7 +102,6 @@ class Tank:
         glutSolidCube(20)
         glPopMatrix()
 
-        # Gun (barrel)
         glPushMatrix()
         glColor3f(0, 0, 0)
         glTranslatef(20, 0, 55)
@@ -115,9 +111,9 @@ class Tank:
 
         glPopMatrix()
 
-    def draw_target_marker(self,h,j,k):
+    def draw_target_marker(self, h, j, k):
         tx, ty, tz = self.target_world_pos()
-        draw_target_marker(tx, ty, tz,h,j,k)
+        draw_target_marker(tx, ty, tz, h, j, k)
 
     def straight_shoot(self):
         rad = math.radians(self.rot)
@@ -132,7 +128,6 @@ class Tank:
     def mortar_shoot(self):
         mx, my, mz = self.muzzle_world_pos()
         tx, ty, tz = self.target_world_pos()
-
         g = -0.15
         T = 120.0
         dx = (tx - mx) / T
@@ -146,7 +141,8 @@ class Tank:
         nx = self.pos[0] + speed * -math.sin(rad)
         ny = self.pos[1] + speed *  math.cos(rad)
         if -GRID_LENGTH + 20 < nx < GRID_LENGTH - 20 and -GRID_LENGTH + 20 < ny < GRID_LENGTH - 20:
-            self.pos[0], self.pos[1] = nx, ny
+            if not wall_collision(nx, ny, 45):
+                self.pos[0], self.pos[1] = nx, ny
 
     def move_backward(self):
         rad = math.radians(self.rot)
@@ -154,7 +150,8 @@ class Tank:
         nx = self.pos[0] - speed * -math.sin(rad)
         ny = self.pos[1] - speed *  math.cos(rad)
         if -GRID_LENGTH + 20 < nx < GRID_LENGTH - 20 and -GRID_LENGTH + 20 < ny < GRID_LENGTH - 20:
-            self.pos[0], self.pos[1] = nx, ny
+            if not wall_collision(nx, ny, 45):
+                self.pos[0], self.pos[1] = nx, ny
 
     def rotate_left(self):
         self.rot = (self.rot + 5) % 360
@@ -209,11 +206,69 @@ def draw_grass():
             glVertex3d(x, y, 0)
             glVertex3d(x+offset[j], y+offset[j], h)
             glEnd()
-            
+
+def tree_init(row, col):
+    global treeList
+
+    if level == 0:
+        maze = maze_layout_one
+    elif level == 1:
+        maze = maze_layout_two
+    else:
+        maze = maze_layout_three
+
+    x_min = -12 * gLen
+    x_max = 8 * gLen
+    y_min = -10 * gLen
+    y_max = 10 * gLen
+
+    i = 0
+    while i < 20:
+        x = random.randint(x_min, x_max)
+        y = random.randint(y_min, y_max)
+        g = random.uniform(0.7, 0.9)
+        col_index = int((x + (col//2) * gLen) // gLen)
+        row_index = int(((row//2) * gLen - y) // gLen)
+
+        if 0 <= row_index < row and 0 <= col_index < col:
+            if maze[row_index][col_index] == 0:
+                treeList.append((x-gLen, y, g))
+                i += 1
+
+def draw_tree():
+    for i in treeList:
+        x, y, g = i
+
+        glColor3f(0.55, 0.27, 0.07)
+        glPushMatrix()
+        glTranslatef(x, y, 0)
+        gluCylinder(gluNewQuadric(), 15, 15, 60, 12, 12)
+        glPopMatrix()
+
+        glColor3f(0, g, 0)
+        glPushMatrix()
+        glTranslatef(x, y, 60)
+        glutSolidSphere(40, 40, 20)
+        glPopMatrix()
+  
+def bullet_wall(bullet_pos, wall_aabbs):
+    px, py = bullet_pos
+    for min_x, max_x, min_y, max_y in wall_aabbs:
+        if min_x <= px <= max_x and min_y <= py <= max_y:
+            return True
+    return False
+
+
+
+
 def draw_maze(row, col):
 
-    gCol = gLen*(col//2)
-    gRow = gLen*(row//2)
+
+    global wall
+    wall = []
+
+    gCol = gLen * (col // 2)
+    gRow = gLen * (row // 2)
 
     # drawing floor
     y = 0
@@ -221,29 +276,46 @@ def draw_maze(row, col):
         x = 0
         flag = (j % 2 == 0)
         for i in range(col):
-            glBegin(GL_QUADS)   
-            glColor3f(0.25, 0.6, 0.2)  
+            glBegin(GL_QUADS)
+            glColor3f(0.25, 0.6, 0.2)
 
-            glVertex3f(0-gRow+x, 0+gCol-y, 0)
-            glVertex3f(0-gRow-gLen+x, 0+gCol-y, 0)
-            glVertex3f(0-gRow-gLen+x, 0+gCol-gLen-y, 0)
-            glVertex3f(0-gRow+x, 0+gCol-gLen-y, 0)
+            glVertex3f(0 - gRow + x, 0 + gCol - y, 0)
+            glVertex3f(0 - gRow - gLen + x, 0 + gCol - y, 0)
+            glVertex3f(0 - gRow - gLen + x, 0 + gCol - gLen - y, 0)
+            glVertex3f(0 - gRow + x, 0 + gCol - gLen - y, 0)
             glEnd()
 
             x += gLen
             flag = not flag
         y += gLen
 
+    # choose maze for collision and drawing
+    if level == 0:
+        maze = maze_layout_one
+    elif level == 1:
+        maze = maze_layout_two
+    else:
+        maze = maze_layout_three
+
+    # wall collision list
+    rows = len(maze)
+    cols = len(maze[0])
+    for r in range(rows):
+        for c in range(cols):
+            if maze[r][c] == 1:
+                x = (c - cols // 2) * gLen
+                y = (rows // 2 - r) * gLen
+                xmin = x - gLen
+                xmax = x
+                ymin = y - gLen
+                ymax = y
+                wall.append((xmin, xmax, ymin, ymax))
+
     # drawing walls
     draw_walls(gRow, gCol, row)
 
     # drawing maze
-    if level == 0:
-        draw_layout(maze_layout_one)
-    elif level == 1:
-        draw_layout(maze_layout_two)
-    else:
-        draw_layout(maze_layout_three)
+    draw_layout(maze)
 
 def draw_walls(gRow, gCol, row):
     x, y = 0, 0
@@ -325,6 +397,42 @@ def draw_layout(maze):
 
     glEnd()
 
+def wall_collision(nx, ny, r):
+
+
+    for xmin, xmax, ymin, ymax in wall:
+        # clamp X
+        if nx < xmin:
+            qx = xmin
+        elif nx > xmax:
+            qx = xmax
+        else:
+            qx = nx
+
+        # clamp Y
+        if ny < ymin:
+            qy = ymin
+        elif ny > ymax:
+            qy = ymax
+        else:
+            qy = ny
+
+        dx = nx - qx
+        dy = ny - qy
+
+        if dx * dx + dy * dy <= r * r:
+            return True
+    return False
+
+def update_tank_scores(tank1, tank2):
+    dx = tank1.pos[0] - tank2.pos[0]
+    dy = tank1.pos[1] - tank2.pos[1]
+    distance = math.sqrt(dx*dx + dy*dy)
+
+    if distance < (90):
+        tank1.score += 1
+        tank2.score += 1
+
 def drawgrid():
     tsize = 45
     for i in range(-GRID_LENGTH, GRID_LENGTH, tsize):
@@ -340,7 +448,8 @@ def drawgrid():
             glVertex3f(i, j + tsize, 0)
             glEnd()
 
-def draw_tree(x=0, y=0, z=0, scale=2):
+'''def draw_tree(x=0, y=0, z=0, scale=2):
+
     glPushMatrix()
     glTranslatef(x, y, z)
     glScalef(scale, scale, scale)
@@ -356,6 +465,7 @@ def draw_tree(x=0, y=0, z=0, scale=2):
     glutSolidSphere(17, 6, 10)
     glPopMatrix()
     glPopMatrix()
+'''
 
 def treespawn():
     global treelist
@@ -431,11 +541,14 @@ def specialKeyListener(key, x, y):
 # -------------------- BULLETS & ANIMATION --------------------
 def update_bullets(shooter, target):
     """Update bullets for one tank, detect hits on the other tank."""
+    global wall
     new_bullets = []
     n = len(shooter.bullets) // 7
     hit_radius = 40   # approximate tank hitbox radius
     for i in range(n):
         # advance bullet
+        if bullet_wall((shooter.bullets[i*7], shooter.bullets[i*7+1]), wall):
+            continue
         x = shooter.bullets[i*7] + shooter.bullets[i*7+3]
         y = shooter.bullets[i*7+1] + shooter.bullets[i*7+4]
         z = shooter.bullets[i*7+2] + shooter.bullets[i*7+5]
@@ -443,12 +556,18 @@ def update_bullets(shooter, target):
         dy = shooter.bullets[i*7+4]
         dz = shooter.bullets[i*7+5] + shooter.bullets[i*7+6]
         g  = shooter.bullets[i*7+6]
+
+        if i == 0 and len(new_bullets) == 0:
+            pass
+        elif bullet_wall((x, y), wall):
+            continue
         # --- check hit against target tank’s actual position ---
         tx, ty, tz = target.pos
         if abs(x - tx) < hit_radius and abs(y - ty) < hit_radius and 0 <= z <= 80:
             shooter.score += 1
             continue  # remove bullet on hit
         # --- keep bullet only if inside grid and above ground ---
+
         if -GRID_LENGTH < x < GRID_LENGTH and -GRID_LENGTH < y < GRID_LENGTH and z >= 0:
             new_bullets.extend([x, y, z, dx, dy, dz, g])
     shooter.bullets = new_bullets
@@ -488,10 +607,12 @@ def showScreen():
     draw_maze(10, 10)
     #drawgrid()
     draw_grass()
-    alltrees()
+    #alltrees()
+    draw_tree()
 
     tank1.draw(); tank2.draw()
     tank1.draw_target_marker(0,0,1); tank2.draw_target_marker(1,1,0)
+    update_tank_scores(tank1, tank2)
     draw_bullets(tank1.bullets, tank1.bullet_color)
     draw_bullets(tank2.bullets, tank2.bullet_color)
 
@@ -519,7 +640,8 @@ def main():
     glutSpecialFunc(specialKeyListener)
     glutIdleFunc(animate)
     grass_init(10, 10)
-    treespawn()
+    #treespawn()
+    tree_init(10, 10)
     glutMainLoop()
 
 if __name__ == "__main__":
