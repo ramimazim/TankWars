@@ -13,7 +13,7 @@ WALL_HEIGHT = 50
 TANK_RADIUS = 40    # consistent spawn & movement radius for tanks
 
 # camera and rendering
-camera_pos = (500, 0, 600)
+camera_pos = (500, 0, 1000)
 fovY = 120
 level = 2
 
@@ -25,7 +25,7 @@ cangle = 0
 radius = 500
 powerup_pos = None
 powerup_active = True
-
+winner = None
 gameover=False
 
 
@@ -78,11 +78,12 @@ class Tank:
         self.color_turret = color_turret
         self.bullet_color = bullet_color
         self.bullets = []           # [x,y,z, dx,dy,dz, g]
-        self.target_distance = 300
+        self.target_distance = 500
         self.score = 0
         self.name = name
         self.double_points = False
         self.nukepowerup=False
+        self.rico=True
 
 
     def muzzle_world_pos(self):
@@ -548,7 +549,7 @@ def update_nuke():
 
     # Explosion expands
     if nuke_radius < nuke_max_radius:
-        nuke_radius += 25  # expansion per frame
+        nuke_radius += 25
 
         # Remove trees in radius
         treeList = [t for t in treeList if math.hypot(t[0] - nuke_pos[0], t[1] - nuke_pos[1]) > nuke_radius]
@@ -562,18 +563,19 @@ def update_nuke():
                 powerup_active = False
                 powerup_pos = None
 
+    # Explosion hit check
     if nuke_pos[2] <= 0 and nuke_target is not None:
         if nuke_target == tank1:
-            tank1 = None
             winner = "Player 2"
         elif nuke_target == tank2:
-            tank2 = None
             winner = "Player 1"
 
+        # don’t delete tanks, just end game
         nuke_target = None
         nuke_active = False
         nuke_radius = 0
         gameover = True
+
 
 
 def draw_nuke():
@@ -764,9 +766,56 @@ def update_bullets(shooter, target):
         new_bullets.extend([nx, ny, nz, dx, dy, next_dz, g])
     shooter.bullets = new_bullets
 
+def advance_level():
+    global level, tank1, tank2
+    global grassList, treeList, wall
+    global powerup_active, powerup_pos
+    global nuke_powerup_active, nuke_powerup_pos,gameover
+
+    # move to next level, max 2
+    level+=1
+
+    # reset environment
+    if level == 0:
+        maze = maze_layout_one
+    elif level == 1:
+        maze = maze_layout_two
+    elif level ==2:
+        maze = maze_layout_three
+    else:
+        gameover=True
+        return
+
+    build_wall_list(maze, 10, 10)
+    grass_init(10, 10)
+    tree_init(10, 10)
+
+    # reset powerups
+    powerup_pos = spawn_powerup(maze)
+    powerup_active = True
+    if level == 2:
+        nuke_powerup_pos = spawn_nuke_powerup(maze)
+        nuke_powerup_active = True
+    else:
+        nuke_powerup_active = False
+
+    # respawn tanks in new safe random positions
+    sx1, sy1 = find_safe_spawn(TANK_RADIUS, 10, 10)
+    sx2, sy2 = find_safe_spawn(TANK_RADIUS, 10, 10)
+    attempts = 0
+    while math.hypot(sx1 - sx2, sy1 - sy2) < 200 and attempts < 200:
+        sx2, sy2 = find_safe_spawn(TANK_RADIUS, 10, 10)
+        attempts += 1
+
+    tank1.pos = [sx1, sy1, 0]
+    tank2.pos = [sx2, sy2, 0]
+    tank1.score = 0
+    tank2.score = 0
+    tank1.bullets.clear()
+    tank2.bullets.clear()
 
 def animate():
-    global tank1, tank2, nuke_active, nuke_pos, nuke_radius, level
+    global tank1, tank2, nuke_active, nuke_pos, nuke_radius, level,winner
     check_powerup_pickup(tank1)
     check_powerup_pickup(tank2)
     if level == 2:
@@ -777,6 +826,12 @@ def animate():
         update_bullets(tank2, tank1)
     update_nuke()
     glutPostRedisplay()
+    if tank1.score>=15 or tank2.score>=15:
+        if tank1.score>=15:
+            winner="Player 1"
+        elif tank2.score>=15:
+            winner="Player 2"
+        advance_level()
 
 
 
@@ -821,8 +876,11 @@ def showScreen():
     draw_grass()
     draw_tree()
     draw_powerup()
+    if level==1:
+        draw_text(10, 670, f"Level 1 winner: {winner}")
     if level==2:
         draw_nuke_powerup()
+        draw_text(10, 670, f"Level 2 winner: {winner}")
     draw_nuke()
 
     if gameover:
