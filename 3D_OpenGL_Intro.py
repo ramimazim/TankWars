@@ -26,6 +26,9 @@ radius = 500
 powerup_pos = None
 powerup_active = True
 
+gameover=False
+
+
 # -------------------- MAZES --------------------
 maze_layout_one = [
     [1,1,1,1,1,1,1,1,1,1],
@@ -79,6 +82,7 @@ class Tank:
         self.score = 0
         self.name = name
         self.double_points = False
+        self.nukepowerup=False
 
 
     def muzzle_world_pos(self):
@@ -245,21 +249,25 @@ def tree_init(row, col):
             x = cx - random.randint(20, gLen - 20)
             y = cy - random.randint(20, gLen - 20)
             g = random.uniform(0.7, 0.9)
-            treeList.append((x, y, g))
+            scale = random.uniform(0.5, 3)
+            treeList.append((x, y, g, scale))
             i += 1
 
 def draw_tree():
     for i in treeList:
-        x, y, g = i
-        glColor3f(0.55, 0.27, 0.07)
+        x, y, g, scale = i
         glPushMatrix()
-        glTranslatef(x, y, 0)
+        glTranslatef(x, y, 0)   # move to tree position first
+        glScalef(scale, scale, scale)  # then scale
+        # trunk
+        glColor3f(0.55, 0.27, 0.07)
         gluCylinder(gluNewQuadric(), 15, 15, 60, 12, 12)
-        glPopMatrix()
+        # foliage
         glColor3f(0, g, 0)
         glPushMatrix()
-        glTranslatef(x, y, 60)
+        glTranslatef(0, 0, 60)  # translate relative to trunk
         glutSolidSphere(40, 40, 20)
+        glPopMatrix()
         glPopMatrix()
 
 # -------------------- BUILD WALL AABBs --------------------
@@ -322,7 +330,7 @@ def draw_maze(row, col):
         x = 0
         for i in range(col):
             glBegin(GL_QUADS)
-            glColor3f(0.25, 0.6, 0.2)
+            glColor3f(0.1, 0.3, 0.1)
             glVertex3f(0 - gRow + x, 0 + gCol - y, 0)
             glVertex3f(0 - gRow - gLen + x, 0 + gCol - y, 0)
             glVertex3f(0 - gRow - gLen + x, 0 + gCol - gLen - y, 0)
@@ -509,8 +517,89 @@ def check_powerup_pickup(tank):
         tx, ty, _ = tank.pos
         px, py = powerup_pos
         if abs(tx - px) < gLen/2 and abs(ty - py) < gLen/2:
+            tank.nukepowerup=True
             tank.double_points = True
             powerup_active = False
+
+
+
+# -------------------- NUKE --------------------
+
+# Nukes
+nuke_active = False
+nuke_pos = [0, 0, 0]   # x, y, z
+nuke_radius = 0
+nuke_max_radius = 800   # covers the whole field
+nuke_speed = 15         # falling speed per frame
+winner=None
+nuke_target=None
+def update_nuke():
+    global nuke_active, nuke_target, nuke_pos, nuke_radius
+    global tank1, tank2, treeList, grassList, powerup_active, powerup_pos
+    global gameover, winner
+
+    if not nuke_active:
+        return
+
+    # Drop nuke
+    if nuke_pos[2] > 0:
+        nuke_pos[2] -= nuke_speed
+        return  # not yet hit the ground
+
+    # Explosion expands
+    if nuke_radius < nuke_max_radius:
+        nuke_radius += 25  # expansion per frame
+
+        # Remove trees in radius
+        treeList = [t for t in treeList if math.hypot(t[0] - nuke_pos[0], t[1] - nuke_pos[1]) > nuke_radius]
+
+        # Remove grass in radius
+        grassList = [g for g in grassList if math.hypot(g[0] - nuke_pos[0], g[1] - nuke_pos[1]) > nuke_radius]
+
+        # Remove powerup if in blast
+        if powerup_active and powerup_pos:
+            if math.hypot(powerup_pos[0] - nuke_pos[0], powerup_pos[1] - nuke_pos[1]) <= nuke_radius:
+                powerup_active = False
+                powerup_pos = None
+
+    if nuke_pos[2] <= 0 and nuke_target is not None:
+        if nuke_target == tank1:
+            tank1 = None
+            winner = "Player 2"
+        elif nuke_target == tank2:
+            tank2 = None
+            winner = "Player 1"
+
+        nuke_target = None
+        nuke_active = False
+        nuke_radius = 0
+        gameover = True
+
+
+def draw_nuke():
+    if not nuke_active:
+        return
+
+    glPushMatrix()
+    glTranslatef(nuke_pos[0], nuke_pos[1], nuke_pos[2])
+
+    if nuke_pos[2] > 0:
+        # Falling nuke
+        if tank1.nukepowerup:
+            glColor3f(0, 0, 1)
+        glColor3f(1, 0, 0)
+        glutSolidSphere(30, 30, 30)
+    else:
+        # Explosion
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        glColor4f(1, 0.5, 0, 0.4)  # semi-transparent
+        glutSolidSphere(nuke_radius, 40, 40)
+        glDisable(GL_BLEND)
+
+    glPopMatrix()
+
+
 
 
 # -------------------- HELPERS --------------------
@@ -550,7 +639,9 @@ def draw_text(x, y, text, font=GLUT_BITMAP_HELVETICA_18):
 
 # -------------------- CONTROLS --------------------
 def keyboardListener(key, x, y):
-    global tank1, tank2,nuke_active, nuke_pos, nuke_radius
+    global tank1, tank2,nuke_active, nuke_pos, nuke_radius,gameover,nuke_target
+    if gameover:
+        return  # ignore inputs after game ends
     if tank1 is None or tank2 is None:
         return
     if key == b'w': tank1.move_forward()
@@ -566,11 +657,20 @@ def keyboardListener(key, x, y):
     if key == b'l': tank2.rotate_right()
     if key == b'u': tank2.straight_shoot()
     if key == b'o': tank2.mortar_shoot()
-    if key == b'n':  # start nuke
-        nuke_active = True
-        nuke_pos = [0, 0, 500]  # drop from above player
-        nuke_radius = 0
-
+    if key == b'n':  # attempt nuke launch
+        # Only tank with nukepowerup can launch
+        if tank1 and tank1.nukepowerup:
+            nuke_active = True
+            nuke_pos = [tank2.pos[0], tank2.pos[1], 500]  # drop above opponent
+            nuke_radius = 0
+            tank1.nukepowerup = False  # consume powerup
+            nuke_target=tank2
+        elif tank2 and tank2.nukepowerup:
+            nuke_active = True
+            nuke_pos = [tank1.pos[0], tank1.pos[1], 500]  # drop above opponent
+            nuke_radius = 0
+            tank2.nukepowerup = False  # consume powerup
+            nuke_target=tank1
 def specialKeyListener(key, x, y):
     global camera_pos, cangle, radius
     if key == GLUT_KEY_LEFT:  cangle -= 1
@@ -635,16 +735,10 @@ def animate():
     if tank1 is not None and tank2 is not None:
         update_bullets(tank1, tank2)
         update_bullets(tank2, tank1)
-    
-    if nuke_active:
-        if nuke_pos[2] > 0:  # falling
-            nuke_pos[2] -= nuke_speed
-        else:  # explosion expanding
-            nuke_radius += nuke_expand_speed
-            if nuke_radius >= GRID_LENGTH:  # explosion covers the field
-                sys.exit(0)  # end program immediately
-
+    update_nuke()
     glutPostRedisplay()
+
+
 
 def draw_bullets(bullets, color):
     glColor3f(*color)
@@ -654,32 +748,6 @@ def draw_bullets(bullets, color):
         glTranslatef(bullets[i*7], bullets[i*7+1], bullets[i*7+2])
         glutSolidCube(5)
         glPopMatrix()
-
-
-nuke_pos = [0, 0, 500]  
-nuke_radius = 5          
-nuke_active = False     
-nuke_speed = 5           
-nuke_expand_speed = 10  
-
-def draw_nuke():
-    global nuke_pos, nuke_radius, nuke_active
-    if not nuke_active:
-        return
-
-    glPushMatrix()
-    glColor4f(1.0, 0.5, 0.0, 0.8)  # orange semi-transparent
-    if nuke_pos[2] > 0:
-        # falling sphere
-        glTranslatef(nuke_pos[0], nuke_pos[1], nuke_pos[2])
-        glutSolidSphere(10, 20, 20)
-    else:
-        # expanding explosion
-        glTranslatef(nuke_pos[0], nuke_pos[1], 0)
-        glutSolidSphere(nuke_radius, 40, 40)
-    glPopMatrix()
-
-
 
 
 
@@ -708,13 +776,16 @@ def showScreen():
         draw_text(10, 730, f"Player 1(Blue) score: {tank1.score}")
         draw_text(10, 700, f"Player 2(Green) score: {tank2.score}")
 
-    draw_nuke()
     
     draw_maze(10, 10)
     draw_grass()
     draw_tree()
     draw_powerup()
+    draw_nuke()
 
+    if gameover:
+        glDisable(GL_LIGHTING)
+        draw_text(400, 400, f"{winner} WINS!", font=GLUT_BITMAP_HELVETICA_18)
 
 
 
