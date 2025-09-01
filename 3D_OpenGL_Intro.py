@@ -25,6 +25,7 @@ class Tank:
         self.bullet_color = bullet_color
         self.bullets = []  # flat array of [x,y,z, dx,dy,dz, g_per_frame]
         self.target_distance = 300  # how far ahead the mortar crosshair is
+        self.score=0
 
     def muzzle_world_pos(self):
         """Approximate muzzle position in world space (front of turret)."""
@@ -75,9 +76,9 @@ class Tank:
 
         glPopMatrix()
 
-    def draw_target_marker(self):
+    def draw_target_marker(self,h,j,k):
         tx, ty, tz = self.target_world_pos()
-        draw_target_marker(tx, ty, tz)
+        draw_target_marker(tx, ty, tz,h,j,k)
 
     def straight_shoot(self):
         rad = math.radians(self.rot)
@@ -229,16 +230,33 @@ def alltrees():
         draw_tree(x, y, z, scale)
 
 # -------------------- HELPERS --------------------
-def draw_target_marker(x, y, z=0):
+def draw_target_marker(x, y, z,a,b,c):
     glDisable(GL_LIGHTING)
     glLineWidth(2)
-    glColor3f(0, 0, 0)
-    size = 25
+    glColor3f(a,b,c)
+    size = 30
     glBegin(GL_LINES)
     glVertex3f(x - size, y, z + 0.1); glVertex3f(x + size, y, z + 0.1)
     glVertex3f(x, y - size, z + 0.1); glVertex3f(x, y + size, z + 0.1)
     glEnd()
-
+# -------------------- TEXT --------------------
+def draw_text(x, y, text, font=GLUT_BITMAP_HELVETICA_18):
+    glColor3f(1,1,1)
+    glMatrixMode(GL_PROJECTION)
+    glPushMatrix()
+    glLoadIdentity()
+    # Set up an orthographic projection that matches window coordinates
+    gluOrtho2D(0, 1000, 0, 800)  # left, right, bottom, top
+    glMatrixMode(GL_MODELVIEW)
+    glPushMatrix()
+    glLoadIdentity()
+    glRasterPos2f(x, y)
+    for ch in text:
+        glutBitmapCharacter(font, ord(ch))
+    glPopMatrix()
+    glMatrixMode(GL_PROJECTION)
+    glPopMatrix()
+    glMatrixMode(GL_MODELVIEW)
 # -------------------- CONTROLS --------------------
 def keyboardListener(key, x, y):
     global tank1, tank2
@@ -269,23 +287,34 @@ def specialKeyListener(key, x, y):
     camera_pos = (nx, ny, z)
 
 # -------------------- BULLETS & ANIMATION --------------------
-def update_bullets(bullets):
+def update_bullets(shooter, target):
+    """Update bullets for one tank, detect hits on the other tank."""
     new_bullets = []
-    n = len(bullets) // 7
+    n = len(shooter.bullets) // 7
+    hit_radius = 40   # approximate tank hitbox radius
     for i in range(n):
-        x  = bullets[i*7] + bullets[i*7+3]
-        y  = bullets[i*7+1] + bullets[i*7+4]
-        z  = bullets[i*7+2] + bullets[i*7+5]
-        dx = bullets[i*7+3]; dy = bullets[i*7+4]; dz = bullets[i*7+5] + bullets[i*7+6]
-        g  = bullets[i*7+6]
-        if z >= 0:
+        # advance bullet
+        x = shooter.bullets[i*7] + shooter.bullets[i*7+3]
+        y = shooter.bullets[i*7+1] + shooter.bullets[i*7+4]
+        z = shooter.bullets[i*7+2] + shooter.bullets[i*7+5]
+        dx = shooter.bullets[i*7+3]
+        dy = shooter.bullets[i*7+4]
+        dz = shooter.bullets[i*7+5] + shooter.bullets[i*7+6]
+        g  = shooter.bullets[i*7+6]
+        # --- check hit against target tank’s actual position ---
+        tx, ty, tz = target.pos
+        if abs(x - tx) < hit_radius and abs(y - ty) < hit_radius and 0 <= z <= 80:
+            shooter.score += 1
+            continue  # remove bullet on hit
+        # --- keep bullet only if inside grid and above ground ---
+        if -GRID_LENGTH < x < GRID_LENGTH and -GRID_LENGTH < y < GRID_LENGTH and z >= 0:
             new_bullets.extend([x, y, z, dx, dy, dz, g])
-    return new_bullets
+    shooter.bullets = new_bullets
 
 def animate():
     global tank1, tank2
-    tank1.bullets = update_bullets(tank1.bullets)
-    tank2.bullets = update_bullets(tank2.bullets)
+    update_bullets(tank1,tank2)
+    update_bullets(tank2,tank1)
     glutPostRedisplay()
 
 def draw_bullets(bullets, color):
@@ -312,14 +341,15 @@ def showScreen():
     glLoadIdentity()
     glViewport(0, 0, 1000, 800)
     setupCamera()
-
+    draw_text(10, 730, f"Player 1(Blue) score: {tank1.score}")
+    draw_text(10, 700, f'Player 2(Green) score: {tank2.score}')
     draw_grass()
     drawgrid()
     drawwall()
     alltrees()
 
     tank1.draw(); tank2.draw()
-    tank1.draw_target_marker(); tank2.draw_target_marker()
+    tank1.draw_target_marker(0,0,1); tank2.draw_target_marker(1,1,0)
     draw_bullets(tank1.bullets, tank1.bullet_color)
     draw_bullets(tank2.bullets, tank2.bullet_color)
 
