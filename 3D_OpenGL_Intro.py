@@ -600,6 +600,43 @@ def draw_nuke():
     glPopMatrix()
 
 
+nuke_powerup_pos = None
+nuke_powerup_active = True
+
+def spawn_nuke_powerup(maze):
+    rows = len(maze)
+    cols = len(maze[0])
+    while True:
+        r = random.randint(0, rows - 1)
+        c = random.randint(0, cols - 1)
+        if maze[r][c] == 0:  # empty cell
+            x = (c - cols // 2) * gLen - gLen / 2
+            y = (rows // 2 - r) * gLen - gLen / 2
+
+            # make sure it’s not too close to the existing yellow powerup
+            if powerup_pos and math.hypot(x - powerup_pos[0], y - powerup_pos[1]) < 200:
+                continue
+
+            return (x, y)
+        
+def draw_nuke_powerup():
+    if nuke_powerup_active and nuke_powerup_pos:
+        glPushMatrix()
+        glTranslatef(nuke_powerup_pos[0], nuke_powerup_pos[1], 0)
+        glColor3f(0.5, 0, 0.5)  # purple
+        glutSolidCube(gLen / 2)
+        glPopMatrix()
+
+def check_nuke_powerup_pickup(tank):
+    global nuke_powerup_active
+    if nuke_powerup_active and nuke_powerup_pos:
+        tx, ty, _ = tank.pos
+        px, py = nuke_powerup_pos
+        if abs(tx - px) < gLen/2 and abs(ty - py) < gLen/2:
+            tank.nukepowerup = True
+            nuke_powerup_active = False
+
+
 
 
 # -------------------- HELPERS --------------------
@@ -732,6 +769,8 @@ def animate():
     global tank1, tank2, nuke_active, nuke_pos, nuke_radius
     check_powerup_pickup(tank1)
     check_powerup_pickup(tank2)
+    check_nuke_powerup_pickup(tank1)
+    check_nuke_powerup_pickup(tank2)
     if tank1 is not None and tank2 is not None:
         update_bullets(tank1, tank2)
         update_bullets(tank2, tank1)
@@ -781,6 +820,7 @@ def showScreen():
     draw_grass()
     draw_tree()
     draw_powerup()
+    draw_nuke_powerup()
     draw_nuke()
 
     if gameover:
@@ -843,7 +883,7 @@ def find_safe_spawn(radius, row, col, max_attempts=2000):
 
 # -------------------- MAIN --------------------
 def main():
-    global tank1, tank2, powerup_active, powerup_pos
+    global tank1, tank2, powerup_active, powerup_pos, nuke_powerup_active, nuke_powerup_pos
     glutInit()
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH)
     glutInitWindowSize(1000, 800)
@@ -869,6 +909,9 @@ def main():
     build_wall_list(maze, 10, 10)
     powerup_pos = spawn_powerup(maze)
     powerup_active = True
+    
+    nuke_powerup_pos = spawn_nuke_powerup(maze)
+    nuke_powerup_active = True
 
     # spawn two tanks in safe positions (consistent radius)
     sx1, sy1 = find_safe_spawn(TANK_RADIUS, 10, 10)
