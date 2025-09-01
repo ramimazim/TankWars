@@ -5,15 +5,15 @@ import math
 import random
 
 # Camera-related variables
-camera_pos = (0,0,500)
+camera_pos = (0,-500,200)
 
 fovY = 120  # Field of view
-#GRID_LENGTH = 600  # Length of grid lines
-gLen = 100
+GRID_LENGTH = 600  # Length of grid lines
+gLen = 600
 rand_var = 423
 p_pos=[0,0,0]
 p_rot=0
-target=[0,0]
+target=[p_pos[0]+10,p_pos[1]+10]
 bullets=[]
 miss=0
 level = 0
@@ -255,15 +255,15 @@ def drawwall():
     glEnd()
 
 def drawgrid():
-    tsize = 60  
+    tsize = 45
     num_tiles = GRID_LENGTH*2//tsize
 
     for i in range(-GRID_LENGTH, GRID_LENGTH, tsize):
         for j in range(-GRID_LENGTH, GRID_LENGTH, tsize):
             if ((i + j) // tsize)%2==0:
-                glColor3f(1.0, 1.0, 1.0)
+                glColor3f(0.82, 0.71, 0.55)
             else:
-                glColor3f(0.7, 0.4, 0.6)
+                glColor3f(0.72, 0.75, 0.32)
 
             glBegin(GL_QUADS)
             glVertex3f(i,j,0)
@@ -277,34 +277,34 @@ def draw_tank():
     x, y, z = p_pos
     glPushMatrix()
     glTranslatef(x, y, z)
-    
-    # Rotate tank so that base angle 0 aligns with +Y axis
-    glRotatef(p_rot + 90, 0, 0, 1)   # <<< changed here
+    glRotatef(p_rot + 90, 0, 0, 1)
 
-    # Base (blue, taller)
+    # Base (blue frustum, vertical, larger)
     glPushMatrix()
     glColor3f(0, 0, 1)
-    glScalef(4, 2, 2)
-    glutSolidCube(30)
+    gluCylinder(gluNewQuadric(),70, 20,60,30, 30)
     glPopMatrix()
 
-    # Turret (red, smaller)
+    # Turret (red cube, sits nicely on top)
     glPushMatrix()
     glColor3f(1, 0, 0)
-    glTranslatef(0, 0, 40)
-    glScalef(2, 1.5, 1)
+    glTranslatef(0, 0, 50)         # exactly on frustum top
+    glScalef(2.5, 2.0, 1.2)        # made a bit larger
     glutSolidCube(20)
     glPopMatrix()
 
-    # Gun (black, facing forward)
+    # Gun (black, facing forward from turret)
     glPushMatrix()
     glColor3f(0, 0, 0)
-    glTranslatef(20, 0, 40)
+    glTranslatef(20, 0, 55)        # slightly higher for better placement
     glRotatef(90, 0, 1, 0)
     gluCylinder(gluNewQuadric(), 3, 3, 40, 10, 10)
     glPopMatrix()
 
     glPopMatrix()
+
+
+
 def draw_bullet():
     global bullets
     glColor3f(1, 0, 0)
@@ -313,13 +313,54 @@ def draw_bullet():
         glTranslatef(bullets[i*6], bullets[i*6+1], bullets[i*6+2])
         glutSolidCube(5)
         glPopMatrix() 
-def drawTarget():
+
+def draw_tree(x=0, y=0, z=0, scale=2):
+    glPushMatrix()
+    glTranslatef(x, y, z) 
+    glScalef(scale, scale, scale)  
+    # Trunk (brown cube)
+    glPushMatrix()
+    glColor3f(0.55, 0.27, 0.07)  
+    glTranslatef(0, 0, 15)        
+    glScalef(8,8,30)           
+    glutSolidCube(1)            
+    glPopMatrix()
+
+    glPushMatrix()
+    glColor3f(0.0, 0.6, 0.0)    
+    glTranslatef(0, 0, 30)      
+    glutSolidSphere(17, 6, 10)  
+    glPopMatrix()
+
+    glPopMatrix()
+
+treelist=[]
+def treespawn():
+    global treelist
+    treelist=[]
+    for i in range(10):
+        x = random.randint(-GRID_LENGTH+20, GRID_LENGTH-20)
+        y = random.randint(-GRID_LENGTH+20, GRID_LENGTH-20)
+        scale=random.randint(1, 3)
+        treelist.append((x, y, 0, scale))
+
+def alltrees():
+    global treelist
+    for i in treelist:
+        x, y, z, scale = i
+        draw_tree(x, y, z, scale)
+
+
+'''def drawTarget(x,y,z=0):
     global target
     glColor3f(0, 0, 0)  # black
     glPushMatrix()
-    glTranslatef(target[0], target[1], 0)
+    glTranslatef(x, y, z)
     glutSolidSphere(5, 10, 10)  # small sphere marker
-    glPopMatrix()
+    glPopMatrix()'''
+
+    
+
 def keyboardListener(key, x, y):
     global p_pos,p_rot,fovY,camera_pos,target
     step = 10  # how much the target moves each press
@@ -355,44 +396,49 @@ def keyboardListener(key, x, y):
         if p_rot==-5:
             p_rot=355    
 
+cangle=0
+radius=500
 
 def specialKeyListener(key, x, y):
-    """
-    Handles special key inputs (arrow keys) for adjusting the camera angle and height.
-    """
-    global camera_pos
-    x, y, z = camera_pos
-    # Move camera up (UP arrow key)
-    # if key == GLUT_KEY_UP:
 
-    # # Move camera down (DOWN arrow key)
-    # if key == GLUT_KEY_DOWN:
+    global camera_pos,cangle,radius
 
-    # moving camera left (LEFT arrow key)
     if key == GLUT_KEY_LEFT:
-        x -= 1  # Small angle decrement for smooth movement
+        cangle-=1 
 
     # moving camera right (RIGHT arrow key)
     if key == GLUT_KEY_RIGHT:
-        x += 1  # Small angle increment for smooth movement
+        cangle+=1 
+    x, y, z = camera_pos
+    if key == GLUT_KEY_UP:
+        z-=10  
+    if key == GLUT_KEY_DOWN:
+        z+=10
 
-    camera_pos = (x, y, z)
-
+    arad= math.radians(cangle)
+    nx=radius*math.cos(arad)
+    ny=radius*math.sin(arad)
+    camera_pos = (nx, ny, z)
 
 def mouseListener(button, state, x, y):
     global bullets, p_pos, p_rot,camera_pos
     if button == GLUT_LEFT_BUTTON and state == GLUT_DOWN:
         mortar_shoot(target)
+    if button == GLUT_RIGHT_BUTTON and state == GLUT_DOWN:
+        straight_shoot()
+
 def mortar_shoot(target):
     global bullets,p_pos
     px, py, pz = p_pos
-    tx, ty = target
-    g = -0.1    # gravity (tune for realism)
-    T = 100        # flight time in frames (higher = slower arc)
+    tx, ty = p_pos[0]+200,p_pos[1]+200
+    g = -0.15   # gravity (tune for realism)
+    T = 120        # flight time in frames (higher = slower arc)
     dx = (tx - px) / T
     dy = (ty - py) / T
     dz = (0 - pz - 0.5 * g * (T**2)) / T   # ensures z ends at 0
+
     bullets.extend([px, py, pz, dx, dy, dz])
+
 def straight_shoot():
     global bullets, p_pos, p_rot
     rad = math.radians(p_rot)
@@ -405,6 +451,7 @@ def straight_shoot():
     bullets.append(dx)
     bullets.append(dy)  
     bullets.append(dz)
+    
 def setupCamera():
     """
     Configures the camera's projection and view settings.
@@ -504,7 +551,7 @@ def showScreen():
 
     setupCamera()  # Configure camera perspective
 
-    draw_maze(10,10)
+    #draw_maze(10,10)
     draw_grass()
 
 
@@ -513,12 +560,13 @@ def showScreen():
     draw_text(10, 770, f"A Random Fixed Position Text")
     draw_text(10, 740, f"See how the position and variable change?: {rand_var}")
 
-
-    #drawgrid()
-    #drawwall()
+    
+    drawgrid()
+    drawwall()
+    alltrees()
     draw_tank()
     draw_bullet()
-    drawTarget()
+    
     # Swap buffers for smooth rendering (double buffering)
     glutSwapBuffers()
 
@@ -538,7 +586,7 @@ def main():
     glutIdleFunc(animate)  # Register the idle function to move the bullet automatically
 
     grass_init(10, 10)
-
+    treespawn()
     glutMainLoop()  # Enter the GLUT main loop
 
 if __name__ == "__main__":
