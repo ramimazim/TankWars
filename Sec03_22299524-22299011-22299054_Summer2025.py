@@ -15,7 +15,7 @@ TANK_RADIUS = 40    # consistent spawn & movement radius for tanks
 # camera and rendering
 camera_pos = (500, 0, 1000)
 fovY = 120
-level = 2
+level = 0
 
 # world lists
 grassList = []
@@ -545,7 +545,9 @@ def update_nuke():
     # Drop nuke
     if nuke_pos[2] > 0:
         nuke_pos[2] -= nuke_speed
-        return  # not yet hit the ground
+        if nuke_pos[2] < 0:  # ensure it lands exactly at 0
+            nuke_pos[2] = 0
+        return  # still falling
 
     # Explosion expands
     if nuke_radius < nuke_max_radius:
@@ -563,18 +565,21 @@ def update_nuke():
                 powerup_active = False
                 powerup_pos = None
 
-    # Explosion hit check
-    if nuke_pos[2] <= 0 and nuke_target is not None:
+        return  # continue expanding over multiple frames
+
+    # Once explosion finished
+    if nuke_target is not None:
         if nuke_target == tank1:
             winner = "Player 2"
         elif nuke_target == tank2:
             winner = "Player 1"
 
-        # don’t delete tanks, just end game
-        nuke_target = None
-        nuke_active = False
-        nuke_radius = 0
-        gameover = True
+    # End nuke
+    nuke_target = None
+    nuke_active = False
+    nuke_radius = 0
+    gameover = True
+
 
 
 
