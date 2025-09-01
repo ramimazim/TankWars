@@ -132,6 +132,7 @@ class Tank:
         rad = math.radians(self.rot)
         speed = 8.0
         mx, my, mz = self.muzzle_world_pos()
+        mz-=10
         dx = speed * -math.sin(rad)
         dy = speed * math.cos(rad)
         dz = 0.0
@@ -465,11 +466,17 @@ def segment_intersects_aabb(p1, p2, aabb):
             return True
     return False
 
-def bullet_hits_wall(bullet_pos, wall_aabbs):
-    px, py = bullet_pos
-    for min_x, max_x, min_y, max_y in wall_aabbs:
-        if min_x <= px <= max_x and min_y <= py <= max_y:
-            return True
+def bullet_hits_wall(prev_pos, new_pos, z_height):
+    """Return True if bullet path between prev_pos and new_pos hits any wall at or above its z height.
+       Mortar bullets with z > WALL_HEIGHT can pass above walls.
+    """
+    px, py = prev_pos
+    nx, ny = new_pos
+    for aabb in wall:
+        # only consider collision if bullet is at or below wall height
+        if z_height <= WALL_HEIGHT:
+            if segment_intersects_aabb((px, py), (nx, ny), aabb):
+                return True
     return False
 
 # -------------------- HELPERS --------------------
@@ -557,23 +564,28 @@ def update_bullets(shooter, target):
         ny = by + dy
         nz = bz + dz
 
-        # bullet collides with walls if its path intersects and its height <= wall height
-        if bullet_hits_wall((nx, ny), wall):
+        # wall collision (disappear if hitting walls, unless mortar is above wall height)
+        if nz <= WALL_HEIGHT:
+            if wall_collision(nx, ny, 5):  # bullet radius ~5
+                continue
+
+        # ground & boundary check
+        if not (-GRID_LENGTH < nx < GRID_LENGTH and -GRID_LENGTH < ny < GRID_LENGTH):
+            continue
+        if nz < 0:  # hit the ground
             continue
 
-        # new vertical velocity for next frame
-        next_dz = dz + g
-
-        # check hit against other tank's real position
+        # check hit against other tank
         tx, ty, tz = target.pos
         if abs(nx - tx) < hit_radius and abs(ny - ty) < hit_radius and 0 <= nz <= 80:
             shooter.score += 1
             continue
 
-        # keep bullet if inside maze/world extents and above ground
-        if -GRID_LENGTH < nx < GRID_LENGTH and -GRID_LENGTH < ny < GRID_LENGTH and nz >= 0:
-            new_bullets.extend([nx, ny, nz, dx, dy, next_dz, g])
+        # keep bullet
+        next_dz = dz + g
+        new_bullets.extend([nx, ny, nz, dx, dy, next_dz, g])
     shooter.bullets = new_bullets
+
 
 def animate():
     global tank1, tank2
