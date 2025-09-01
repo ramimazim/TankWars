@@ -465,17 +465,11 @@ def segment_intersects_aabb(p1, p2, aabb):
             return True
     return False
 
-def bullet_hits_wall(prev_pos, new_pos, z_height):
-    """Return True if bullet path between prev_pos and new_pos hits any wall at or above its z height.
-       Mortar bullets with z > WALL_HEIGHT can pass above walls.
-    """
-    px, py = prev_pos
-    nx, ny = new_pos
-    for aabb in wall:
-        # only consider collision if bullet is at or below wall height
-        if z_height <= WALL_HEIGHT:
-            if segment_intersects_aabb((px, py), (nx, ny), aabb):
-                return True
+def bullet_hits_wall(bullet_pos, wall_aabbs):
+    px, py = bullet_pos
+    for min_x, max_x, min_y, max_y in wall_aabbs:
+        if min_x <= px <= max_x and min_y <= py <= max_y:
+            return True
     return False
 
 # -------------------- HELPERS --------------------
@@ -564,7 +558,7 @@ def update_bullets(shooter, target):
         nz = bz + dz
 
         # bullet collides with walls if its path intersects and its height <= wall height
-        if bullet_hits_wall((bx, by), (nx, ny), bz):
+        if bullet_hits_wall((nx, ny), wall):
             continue
 
         # new vertical velocity for next frame
