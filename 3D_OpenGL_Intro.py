@@ -515,7 +515,7 @@ def draw_text(x, y, text, font=GLUT_BITMAP_HELVETICA_18):
 
 # -------------------- CONTROLS --------------------
 def keyboardListener(key, x, y):
-    global tank1, tank2
+    global tank1, tank2,nuke_active, nuke_pos, nuke_radius
     if tank1 is None or tank2 is None:
         return
     if key == b'w': tank1.move_forward()
@@ -531,6 +531,10 @@ def keyboardListener(key, x, y):
     if key == b'l': tank2.rotate_right()
     if key == b'u': tank2.straight_shoot()
     if key == b'o': tank2.mortar_shoot()
+    if key == b'n':  # start nuke
+        nuke_active = True
+        nuke_pos = [0, 0, 500]  # drop from above player
+        nuke_radius = 0
 
 def specialKeyListener(key, x, y):
     global camera_pos, cangle, radius
@@ -582,10 +586,19 @@ def update_bullets(shooter, target):
     shooter.bullets = new_bullets
 
 def animate():
-    global tank1, tank2
+    global tank1, tank2, nuke_active, nuke_pos, nuke_radius
     if tank1 is not None and tank2 is not None:
         update_bullets(tank1, tank2)
         update_bullets(tank2, tank1)
+    
+    if nuke_active:
+        if nuke_pos[2] > 0:  # falling
+            nuke_pos[2] -= nuke_speed
+        else:  # explosion expanding
+            nuke_radius += nuke_expand_speed
+            if nuke_radius >= GRID_LENGTH:  # explosion covers the field
+                sys.exit(0)  # end program immediately
+
     glutPostRedisplay()
 
 def draw_bullets(bullets, color):
@@ -596,6 +609,36 @@ def draw_bullets(bullets, color):
         glTranslatef(bullets[i*7], bullets[i*7+1], bullets[i*7+2])
         glutSolidCube(5)
         glPopMatrix()
+
+
+nuke_pos = [0, 0, 500]  
+nuke_radius = 5          
+nuke_active = False     
+nuke_speed = 5           
+nuke_expand_speed = 10  
+
+def draw_nuke():
+    global nuke_pos, nuke_radius, nuke_active
+    if not nuke_active:
+        return
+
+    glPushMatrix()
+    glColor4f(1.0, 0.5, 0.0, 0.8)  # orange semi-transparent
+    if nuke_pos[2] > 0:
+        # falling sphere
+        glTranslatef(nuke_pos[0], nuke_pos[1], nuke_pos[2])
+        glutSolidSphere(10, 20, 20)
+    else:
+        # expanding explosion
+        glTranslatef(nuke_pos[0], nuke_pos[1], 0)
+        glutSolidSphere(nuke_radius, 40, 40)
+    glPopMatrix()
+
+
+
+
+
+
 
 # -------------------- CAMERA & DISPLAY --------------------
 def setupCamera():
@@ -620,9 +663,14 @@ def showScreen():
         draw_text(10, 730, f"Player 1(Blue) score: {tank1.score}")
         draw_text(10, 700, f"Player 2(Green) score: {tank2.score}")
 
-    draw_maze(10, 10)
-    draw_grass()
-    draw_tree()
+
+    draw_nuke()
+    if not nuke_active or (nuke_radius < GRID_LENGTH*2):
+        draw_maze(10, 10)
+        draw_grass()
+        draw_tree()
+
+
 
     if tank1 is not None and tank2 is not None:
         tank1.draw(); tank2.draw()
