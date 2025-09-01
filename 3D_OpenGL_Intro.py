@@ -132,6 +132,7 @@ class Tank:
         rad = math.radians(self.rot)
         speed = 8.0
         mx, my, mz = self.muzzle_world_pos()
+        mz-=10
         dx = speed * -math.sin(rad)
         dy = speed * math.cos(rad)
         dz = 0.0
@@ -567,23 +568,28 @@ def update_bullets(shooter, target):
         ny = by + dy
         nz = bz + dz
 
-        # bullet collides with walls if its path intersects and its height <= wall height
-        if bullet_hits_wall((bx, by), (nx, ny), bz):
+        # wall collision (disappear if hitting walls, unless mortar is above wall height)
+        if nz <= WALL_HEIGHT:
+            if wall_collision(nx, ny, 5):  # bullet radius ~5
+                continue
+
+        # ground & boundary check
+        if not (-GRID_LENGTH < nx < GRID_LENGTH and -GRID_LENGTH < ny < GRID_LENGTH):
+            continue
+        if nz < 0:  # hit the ground
             continue
 
-        # new vertical velocity for next frame
-        next_dz = dz + g
-
-        # check hit against other tank's real position
+        # check hit against other tank
         tx, ty, tz = target.pos
         if abs(nx - tx) < hit_radius and abs(ny - ty) < hit_radius and 0 <= nz <= 80:
             shooter.score += 1
             continue
 
-        # keep bullet if inside maze/world extents and above ground
-        if -GRID_LENGTH < nx < GRID_LENGTH and -GRID_LENGTH < ny < GRID_LENGTH and nz >= 0:
-            new_bullets.extend([nx, ny, nz, dx, dy, next_dz, g])
+        # keep bullet
+        next_dz = dz + g
+        new_bullets.extend([nx, ny, nz, dx, dy, next_dz, g])
     shooter.bullets = new_bullets
+
 
 def animate():
     global tank1, tank2, nuke_active, nuke_pos, nuke_radius
