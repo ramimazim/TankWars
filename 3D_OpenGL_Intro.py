@@ -4,83 +4,149 @@ from OpenGL.GLU import *
 import math
 import random
 
-# Camera-related variables
-camera_pos = (0,-500,200)
-
-fovY = 120  # Field of view
-GRID_LENGTH = 600  # Length of grid lines
+# -------------------- CAMERA / WORLD --------------------
+camera_pos = (0, -500, 200)
+fovY = 120
+GRID_LENGTH = 600
 gLen = 600
-rand_var = 423
-p_pos=[0,0,0]
-p_rot=0
-target=[p_pos[0]+10,p_pos[1]+10]
-bullets=[]
-miss=0
 level = 0
-
 grassList = []
+treelist = []
+cangle = 0
+radius = 500
 
-maze_layout_one = [
-    [1,1,1,1,1,1,1,1,1,1],
-    [1,0,0,0,1,0,0,0,0,1],
-    [1,0,1,0,1,0,1,1,0,1],
-    [1,0,1,0,0,0,0,1,0,1],
-    [1,0,1,1,1,1,0,1,0,1],
-    [1,0,0,0,0,1,0,1,0,1],
-    [1,1,1,1,0,1,0,1,0,1],
-    [1,0,0,1,0,0,0,1,0,1],
-    [1,0,0,0,0,1,0,0,0,1],
-    [1,1,1,1,1,1,1,1,1,1]
-]
+# -------------------- TANK CLASS --------------------
+class Tank:
+    def __init__(self, color_base, color_turret, bullet_color, spawn):
+        self.pos = [spawn[0], spawn[1], 0]
+        self.rot = 0
+        self.color_base = color_base
+        self.color_turret = color_turret
+        self.bullet_color = bullet_color
+        self.bullets = []  # flat array of [x,y,z, dx,dy,dz, g_per_frame]
+        # Target marker for mortar (where the shell is calculated to land)
+        self.mortar_offset = (200, 200)  # (dx, dy) from current tank pos
 
-maze_layout_two = [
-    [1,1,1,1,1,1,1,1,1,1],
-    [1,0,0,1,0,0,0,1,0,1],
-    [1,0,1,1,0,1,0,1,0,1],
-    [1,0,1,0,0,1,0,0,0,1],
-    [1,0,1,0,1,1,1,1,0,1],
-    [1,0,0,0,1,0,0,1,0,1],
-    [1,1,1,0,1,0,1,1,0,1],
-    [1,0,0,0,0,0,1,0,0,1],
-    [1,0,1,1,1,0,0,0,0,1],
-    [1,1,1,1,1,1,1,1,1,1]
-]
+    def muzzle_world_pos(self):
+        """Approximate muzzle position in world space (front of turret)."""
+        # Tank base at z=0; turret top ~50, muzzle ~55 in model
+        # Muzzle offset is along facing direction (local +X before we rotate)
+        rad = math.radians(self.rot)
+        forward_x = -math.sin(rad)
+        forward_y =  math.cos(rad)
+        # 20 is the local +X used in draw(); push a tad farther so it clears the turret
+        x = self.pos[0] + forward_x * 30
+        y = self.pos[1] + forward_y * 30
+        z = 55  # gun height
+        return x, y, z
 
-maze_layout_three = [
-    [1,1,1,1,1,1,1,1,1,1],
-    [1,0,1,0,0,1,0,0,1,1],
-    [1,0,1,1,0,1,1,0,0,1],
-    [1,0,0,0,0,0,1,1,0,1],
-    [1,1,1,0,1,1,0,1,0,1],
-    [1,0,0,0,1,0,0,1,0,1],
-    [1,0,1,1,1,0,1,1,0,1],
-    [1,0,0,0,0,0,1,0,0,1],
-    [1,1,0,1,1,0,0,0,0,1],
-    [1,1,1,1,1,1,1,1,1,1]
-]
+    def draw(self):
+        x, y, z = self.pos
+        glPushMatrix()
+        glTranslatef(x, y, z)
+        glRotatef(self.rot + 90, 0, 0, 1)
 
+        # Base (frustum)
+        glPushMatrix()
+        glColor3f(*self.color_base)
+        gluCylinder(gluNewQuadric(), 70, 20, 60, 30, 30)
+        glPopMatrix()
+
+        # Turret (cube)
+        glPushMatrix()
+        glColor3f(*self.color_turret)
+        glTranslatef(0, 0, 50)
+        glScalef(2.5, 2.0, 1.2)
+        glutSolidCube(20)
+        glPopMatrix()
+
+        # Gun (barrel)
+        glPushMatrix()
+        glColor3f(0, 0, 0)
+        glTranslatef(20, 0, 55)
+        glRotatef(90, 0, 1, 0)
+        gluCylinder(gluNewQuadric(), 3, 3, 40, 10, 10)
+        glPopMatrix()
+
+        glPopMatrix()
+
+    def draw_target_marker(self):
+        """Draw a ground crosshair + ring where the mortar will land."""
+        tx = self.pos[0] + self.mortar_offset[0]
+        ty = self.pos[1] + self.mortar_offset[1]
+        tz = 0
+        draw_target_marker(tx, ty, tz)
+
+    def straight_shoot(self):
+        """Fire a straight (no gravity) round from the muzzle, parallel to ground."""
+        rad = math.radians(self.rot)
+        speed = 8.0
+        mx, my, mz = self.muzzle_world_pos()
+        dx = speed * -math.sin(rad)
+        dy = speed *  math.cos(rad)
+        dz = 0.0                     # straight — no vertical component
+        g_per_frame = 0.0            # no gravity for straight rounds
+        self.bullets.extend([mx, my, mz, dx, dy, dz, g_per_frame])
+
+    def mortar_shoot(self):
+        """Fire an arcing round that lands at the target marker."""
+        px, py, pz = self.pos
+        tx = px + self.mortar_offset[0]
+        ty = py + self.mortar_offset[1]
+        # Fire from muzzle so it clears the turret
+        mx, my, mz = self.muzzle_world_pos()
+
+        # Kinematics: choose T and g to solve for dz so z(T)=0
+        g = -0.15
+        T = 120.0
+        dx = (tx - mx) / T
+        dy = (ty - my) / T
+        # Solve for dz so that mz + dz*T + 0.5*g*T^2 = 0
+        dz = (0 - mz - 0.5 * g * (T**2)) / T
+        self.bullets.extend([mx, my, mz, dx, dy, dz, g])
+
+    def move_forward(self):
+        rad = math.radians(self.rot)
+        speed = 10.0
+        nx = self.pos[0] + speed * -math.sin(rad)
+        ny = self.pos[1] + speed *  math.cos(rad)
+        if -GRID_LENGTH + 20 < nx < GRID_LENGTH - 20 and -GRID_LENGTH + 20 < ny < GRID_LENGTH - 20:
+            self.pos[0], self.pos[1] = nx, ny
+
+    def move_backward(self):
+        rad = math.radians(self.rot)
+        speed = 10.0
+        nx = self.pos[0] - speed * -math.sin(rad)
+        ny = self.pos[1] - speed *  math.cos(rad)
+        if -GRID_LENGTH + 20 < nx < GRID_LENGTH - 20 and -GRID_LENGTH + 20 < ny < GRID_LENGTH - 20:
+            self.pos[0], self.pos[1] = nx, ny
+
+    def rotate_left(self):
+        self.rot = (self.rot + 5) % 360
+
+    def rotate_right(self):
+        self.rot = (self.rot - 5) % 360
+
+
+# -------------------- TANKS --------------------
+tank1 = Tank(color_base=(0, 0, 1), color_turret=(1, 0, 0), bullet_color=(1, 0, 0),
+             spawn=(random.randint(-300, 300), random.randint(-300, 300)))
+tank2 = Tank(color_base=(0, 1, 0), color_turret=(1, 1, 0), bullet_color=(1, 0, 1),
+             spawn=(random.randint(-300, 300), random.randint(-300, 300)))
+
+# -------------------- ENVIRONMENT --------------------
 def grass_init(row, col):
     global grassList
-
-    if level == 0:
-        maze = maze_layout_one
-    elif level == 1:
-        maze = maze_layout_two
-    else:
-        maze = maze_layout_three
-
     i = 0
     while i < 1000:
         x = random.randint(-600, 400)
         y = random.randint(-500, 500)
         g = random.uniform(0.7, 0.9)
-        col_index = int((x + (col//2) * gLen) // gLen)
-        row_index = int(((row//2) * gLen - y) // gLen)
-
+        col_index = int((x + (col // 2) * gLen) // gLen)
+        row_index = int(((row // 2) * gLen - y) // gLen)
         if 0 <= row_index < row and 0 <= col_index < col:
-            if maze[row_index][col_index] == 0:
-                grassList.append((x-gLen, y, g))
-                i += 1
+            grassList.append((x - gLen, y, g))
+            i += 1
 
 def draw_grass():
     for i in grassList:
@@ -89,505 +155,247 @@ def draw_grass():
         for j in range(3):
             h = random.randint(8, 15)
             glBegin(GL_LINES)
-            glColor3f(0,g,0)
+            glColor3f(0, g, 0)
             glVertex3d(x, y, 0)
-            glVertex3d(x+offset[j], y+offset[j], h)
+            glVertex3d(x + offset[j], y + offset[j], h)
             glEnd()
-            
-def draw_maze(row, col):
-
-    gCol = gLen*(col//2)
-    gRow = gLen*(row//2)
-
-    # drawing floor
-    y = 0
-    for j in range(row):
-        x = 0
-        flag = (j % 2 == 0)
-        for i in range(col):
-            glBegin(GL_QUADS)   
-            glColor3f(0.25, 0.6, 0.2)  
-
-            glVertex3f(0-gRow+x, 0+gCol-y, 0)
-            glVertex3f(0-gRow-gLen+x, 0+gCol-y, 0)
-            glVertex3f(0-gRow-gLen+x, 0+gCol-gLen-y, 0)
-            glVertex3f(0-gRow+x, 0+gCol-gLen-y, 0)
-            glEnd()
-
-            x += gLen
-            flag = not flag
-        y += gLen
-
-    # drawing walls
-    draw_walls(gRow, gCol, row)
-
-    # drawing maze
-    if level == 0:
-        draw_layout(maze_layout_one)
-    elif level == 1:
-        draw_layout(maze_layout_two)
-    else:
-        draw_layout(maze_layout_three)
-
-def draw_walls(gRow, gCol, row):
-    x, y = 0, 0
-    glColor3f(0.4, 0.4, 0.45) 
-
-    # left wall
-    glBegin(GL_QUADS)
-    glVertex3f(-gRow-gLen, gCol,  0)
-    glVertex3f(-gRow-gLen, -gCol,  0)
-    glVertex3f(-gRow-gLen, -gCol, 20)
-    glVertex3f(-gRow-gLen,  gCol, 20)
-    glEnd()
-    
-    # top
-    glBegin(GL_QUADS)
-    glVertex3f(-gRow-gLen, gCol,  0)
-    glVertex3f(gRow-gLen, gCol,  0)
-    glVertex3f(gRow-gLen,  gCol, 20)
-    glVertex3f(-gRow-gLen, gCol, 20)  
-    glEnd()
-
-    # bottom
-    glBegin(GL_QUADS)
-    y = gCol - row*gLen
-    glVertex3f(-gRow-gLen,  y,  0)
-    glVertex3f(gRow-gLen, y,  0)
-    glVertex3f(gRow-gLen, y, 20)
-    glVertex3f(-gRow-gLen,  y, 20)
-    glEnd()
-
-    # right
-    glBegin(GL_QUADS)
-    glVertex3f(gRow-gLen, gCol,  0)
-    glVertex3f(gRow-gLen, -gCol,  0)
-    glVertex3f(gRow-gLen,  -gCol, 20)
-    glVertex3f(gRow-gLen, gCol, 20)
-       
-    glEnd()
-
-def draw_layout(maze):
-    glColor3f(0.6, 0.6, 0.65)
-    glBegin(GL_QUADS)
-
-    rows = len(maze)
-    cols = len(maze[0])
-
-    for r in range(rows):
-        for c in range(cols):
-            if maze[r][c] == 1:
-
-                x = (c - cols//2) * gLen
-                y = (rows//2 - r) * gLen
-
-                glVertex3f(x, y, 0)
-                glVertex3f(x - gLen, y, 0)
-                glVertex3f(x - gLen, y - gLen, 0)
-                glVertex3f(x, y - gLen, 0)
-
-    glEnd()
-
-
-def draw_text(x, y, text, font=GLUT_BITMAP_HELVETICA_18):
-    glColor3f(1,1,1)
-    glMatrixMode(GL_PROJECTION)
-    glPushMatrix()
-    glLoadIdentity()
-    
-    # Set up an orthographic projection that matches window coordinates
-    gluOrtho2D(0, 1000, 0, 800)  # left, right, bottom, top
-
-    
-    glMatrixMode(GL_MODELVIEW)
-    glPushMatrix()
-    glLoadIdentity()
-    
-    # Draw text at (x, y) in screen coordinates
-    glRasterPos2f(x, y)
-    for ch in text:
-        glutBitmapCharacter(font, ord(ch))
-    
-    # Restore original projection and modelview matrices
-    glPopMatrix()
-    glMatrixMode(GL_PROJECTION)
-    glPopMatrix()
-    glMatrixMode(GL_MODELVIEW)
-
-
-
-def drawwall():
-    wall_height = 100 
-    #WALL1
-    glBegin(GL_QUADS)
-    glVertex3f(-GRID_LENGTH, -GRID_LENGTH, 0)
-    glVertex3f(-GRID_LENGTH,  GRID_LENGTH, 0)
-    glVertex3f(-GRID_LENGTH,  GRID_LENGTH, wall_height)
-    glVertex3f(-GRID_LENGTH, -GRID_LENGTH, wall_height)
-    glColor3f(0,0,1)
-    glEnd()
-
-    #WALL2
-    glBegin(GL_QUADS)
-    glVertex3f(GRID_LENGTH, -GRID_LENGTH, 0)
-    glVertex3f(GRID_LENGTH,  GRID_LENGTH, 0)
-    glVertex3f(GRID_LENGTH,  GRID_LENGTH, wall_height)
-    glVertex3f(GRID_LENGTH, -GRID_LENGTH, wall_height)
-    glColor3f(0,1,0)
-    glEnd()
-
-    #WALL3
-    glBegin(GL_QUADS)
-    glVertex3f(-GRID_LENGTH, GRID_LENGTH, 0)
-    glVertex3f(GRID_LENGTH,  GRID_LENGTH, 0)
-    glVertex3f(GRID_LENGTH,  GRID_LENGTH, wall_height)
-    glVertex3f(-GRID_LENGTH, GRID_LENGTH, wall_height)
-    glColor3f(1,0,0)
-    glEnd()
-
-    #WALL4
-    glBegin(GL_QUADS)
-    glVertex3f(-GRID_LENGTH, -GRID_LENGTH, 0)
-    glVertex3f(GRID_LENGTH,  -GRID_LENGTH, 0)
-    glVertex3f(GRID_LENGTH,  -GRID_LENGTH, wall_height)
-    glVertex3f(-GRID_LENGTH, -GRID_LENGTH, wall_height)
-    glColor3f(1,1,1)
-    glEnd()
 
 def drawgrid():
     tsize = 45
-    num_tiles = GRID_LENGTH*2//tsize
-
     for i in range(-GRID_LENGTH, GRID_LENGTH, tsize):
         for j in range(-GRID_LENGTH, GRID_LENGTH, tsize):
-            if ((i + j) // tsize)%2==0:
+            if ((i + j) // tsize) % 2 == 0:
                 glColor3f(0.82, 0.71, 0.55)
             else:
                 glColor3f(0.72, 0.75, 0.32)
-
             glBegin(GL_QUADS)
-            glVertex3f(i,j,0)
-            glVertex3f(i+tsize,j,0)
-            glVertex3f(i+tsize,j+tsize,0)
-            glVertex3f(i,j+tsize,0)
+            glVertex3f(i, j, 0)
+            glVertex3f(i + tsize, j, 0)
+            glVertex3f(i + tsize, j + tsize, 0)
+            glVertex3f(i, j + tsize, 0)
             glEnd()
 
-def draw_tank():
-    global p_pos, p_rot
-    x, y, z = p_pos
-    glPushMatrix()
-    glTranslatef(x, y, z)
-    glRotatef(p_rot + 90, 0, 0, 1)
+def drawwall():
+    """Four vertical boundary walls with consistent CCW winding."""
+    wall_height = 100
+    L = -GRID_LENGTH
+    R =  GRID_LENGTH
+    B = -GRID_LENGTH
+    T =  GRID_LENGTH
 
-    # Base (blue frustum, vertical, larger)
-    glPushMatrix()
-    glColor3f(0, 0, 1)
-    gluCylinder(gluNewQuadric(),70, 20,60,30, 30)
-    glPopMatrix()
+    # Left wall (x=L)
+    glColor3f(0.3, 0.3, 0.35)
+    glBegin(GL_QUADS)
+    glVertex3f(L, B, 0)
+    glVertex3f(L, T, 0)
+    glVertex3f(L, T, wall_height)
+    glVertex3f(L, B, wall_height)
+    glEnd()
 
-    # Turret (red cube, sits nicely on top)
-    glPushMatrix()
-    glColor3f(1, 0, 0)
-    glTranslatef(0, 0, 50)         # exactly on frustum top
-    glScalef(2.5, 2.0, 1.2)        # made a bit larger
-    glutSolidCube(20)
-    glPopMatrix()
+    # Right wall (x=R)
+    glColor3f(0.35, 0.35, 0.4)
+    glBegin(GL_QUADS)
+    glVertex3f(R, T, 0)
+    glVertex3f(R, B, 0)
+    glVertex3f(R, B, wall_height)
+    glVertex3f(R, T, wall_height)
+    glEnd()
 
-    # Gun (black, facing forward from turret)
-    glPushMatrix()
-    glColor3f(0, 0, 0)
-    glTranslatef(20, 0, 55)        # slightly higher for better placement
-    glRotatef(90, 0, 1, 0)
-    gluCylinder(gluNewQuadric(), 3, 3, 40, 10, 10)
-    glPopMatrix()
+    # Top wall (y=T)
+    glColor3f(0.4, 0.4, 0.45)
+    glBegin(GL_QUADS)
+    glVertex3f(L, T, 0)
+    glVertex3f(R, T, 0)
+    glVertex3f(R, T, wall_height)
+    glVertex3f(L, T, wall_height)
+    glEnd()
 
-    glPopMatrix()
-
-
-
-def draw_bullet():
-    global bullets
-    glColor3f(1, 0, 0)
-    for i in range(len(bullets) // 6):
-        glPushMatrix()
-        glTranslatef(bullets[i*6], bullets[i*6+1], bullets[i*6+2])
-        glutSolidCube(5)
-        glPopMatrix() 
+    # Bottom wall (y=B)
+    glColor3f(0.45, 0.45, 0.5)
+    glBegin(GL_QUADS)
+    glVertex3f(R, B, 0)
+    glVertex3f(L, B, 0)
+    glVertex3f(L, B, wall_height)
+    glVertex3f(R, B, wall_height)
+    glEnd()
 
 def draw_tree(x=0, y=0, z=0, scale=2):
     glPushMatrix()
-    glTranslatef(x, y, z) 
-    glScalef(scale, scale, scale)  
-    # Trunk (brown cube)
+    glTranslatef(x, y, z)
+    glScalef(scale, scale, scale)
     glPushMatrix()
-    glColor3f(0.55, 0.27, 0.07)  
-    glTranslatef(0, 0, 15)        
-    glScalef(8,8,30)           
-    glutSolidCube(1)            
+    glColor3f(0.55, 0.27, 0.07)
+    glTranslatef(0, 0, 15)
+    glScalef(8, 8, 30)
+    glutSolidCube(1)
     glPopMatrix()
-
     glPushMatrix()
-    glColor3f(0.0, 0.6, 0.0)    
-    glTranslatef(0, 0, 30)      
-    glutSolidSphere(17, 6, 10)  
+    glColor3f(0.0, 0.6, 0.0)
+    glTranslatef(0, 0, 30)
+    glutSolidSphere(17, 6, 10)
+    glPopMatrix()
     glPopMatrix()
 
-    glPopMatrix()
-
-treelist=[]
 def treespawn():
     global treelist
-    treelist=[]
+    treelist = []
     for i in range(10):
-        x = random.randint(-GRID_LENGTH+20, GRID_LENGTH-20)
-        y = random.randint(-GRID_LENGTH+20, GRID_LENGTH-20)
-        scale=random.randint(1, 3)
+        x = random.randint(-GRID_LENGTH + 20, GRID_LENGTH - 20)
+        y = random.randint(-GRID_LENGTH + 20, GRID_LENGTH - 20)
+        scale = random.randint(1, 3)
         treelist.append((x, y, 0, scale))
 
 def alltrees():
-    global treelist
     for i in treelist:
         x, y, z, scale = i
         draw_tree(x, y, z, scale)
 
+# -------------------- HELPERS --------------------
+def draw_target_marker(x, y, z=0):
+    """Draw a thin crosshair and ring on the ground."""
+    glDisable(GL_LIGHTING)
+    glLineWidth(2)
+    glColor3f(0, 0, 0)
+    size = 25
+    # Cross
+    glBegin(GL_LINES)
+    glVertex3f(x - size, y, z + 0.1)
+    glVertex3f(x + size, y, z + 0.1)
+    glVertex3f(x, y - size, z + 0.1)
+    glVertex3f(x, y + size, z + 0.1)
+    glEnd()
+    # Ring
+    glBegin(GL_LINE_LOOP)
+    segments = 24
+    r = 18
+    for i in range(segments):
+        ang = 2 * math.pi * i / segments
+        glVertex3f(x + r * math.cos(ang), y + r * math.sin(ang), z + 0.1)
+    glEnd()
 
-'''def drawTarget(x,y,z=0):
-    global target
-    glColor3f(0, 0, 0)  # black
-    glPushMatrix()
-    glTranslatef(x, y, z)
-    glutSolidSphere(5, 10, 10)  # small sphere marker
-    glPopMatrix()'''
-
-    
-
+# -------------------- CONTROLS --------------------
 def keyboardListener(key, x, y):
-    global p_pos,p_rot,fovY,camera_pos,target
-    step = 10  # how much the target moves each press
-    if key == b'j':  # move up
-        target[1] += step
-    elif key == b'u':  # move down
-        target[1] -= step
-    elif key == b'k':  # move left
-        target[0] -= step
-    elif key == b'h':  # move right
-        target[0] += step
-    speed = 10.0
-    if key == b'w':   # move forward in facing direction   
-        rad = math.radians(p_rot)
-        xinc=speed*-math.sin(rad)
-        yinc=speed*math.cos(rad)
-        if -GRID_LENGTH+20<p_pos[0]+xinc<GRID_LENGTH-20 and -GRID_LENGTH+20<p_pos[1]+yinc<GRID_LENGTH-20:
-            p_pos[0] += xinc   # X movement
-            p_pos[1] += yinc   # Y movement
-    if key == b's':   # move backward
-        rad = math.radians(p_rot)
-        xinc=speed*-math.sin(rad)
-        yinc=speed*math.cos(rad)
-        if -GRID_LENGTH+20<p_pos[0]-xinc<GRID_LENGTH-20 and -GRID_LENGTH+20<p_pos[1]-yinc<GRID_LENGTH-20:
-            p_pos[0] -= xinc   # X movement
-            p_pos[1] -= yinc   # Y movement
-    if key == b'a':   # rotate anticlockwise
-        p_rot += 5
-        if p_rot==360:
-            p_rot=0
-    if key == b'd':   # rotate clockwise
-        p_rot -= 5
-        if p_rot==-5:
-            p_rot=355    
+    global tank1, tank2
+    # Tank 1 (WASD + F/G)
+    if key == b'w': tank1.move_forward()
+    if key == b's': tank1.move_backward()
+    if key == b'a': tank1.rotate_left()
+    if key == b'd': tank1.rotate_right()
+    if key == b'q': tank1.straight_shoot()
+    if key == b'e': tank1.mortar_shoot()
 
-cangle=0
-radius=500
+    # Tank 2 (IJKL + N/M)
+    if key == b'i': tank2.move_forward()
+    if key == b'k': tank2.move_backward()
+    if key == b'j': tank2.rotate_left()
+    if key == b'l': tank2.rotate_right()
+    if key == b'u': tank2.straight_shoot()
+    if key == b'o': tank2.mortar_shoot()
 
 def specialKeyListener(key, x, y):
-
-    global camera_pos,cangle,radius
-
-    if key == GLUT_KEY_LEFT:
-        cangle-=1 
-
-    # moving camera right (RIGHT arrow key)
-    if key == GLUT_KEY_RIGHT:
-        cangle+=1 
+    global camera_pos, cangle, radius
+    if key == GLUT_KEY_LEFT:  cangle -= 1
+    if key == GLUT_KEY_RIGHT: cangle += 1
     x, y, z = camera_pos
-    if key == GLUT_KEY_UP:
-        z-=10  
-    if key == GLUT_KEY_DOWN:
-        z+=10
-
-    arad= math.radians(cangle)
-    nx=radius*math.cos(arad)
-    ny=radius*math.sin(arad)
+    if key == GLUT_KEY_UP:    z -= 10
+    if key == GLUT_KEY_DOWN:  z += 10
+    arad = math.radians(cangle)
+    nx = radius * math.cos(arad)
+    ny = radius * math.sin(arad)
     camera_pos = (nx, ny, z)
 
-def mouseListener(button, state, x, y):
-    global bullets, p_pos, p_rot,camera_pos
-    if button == GLUT_LEFT_BUTTON and state == GLUT_DOWN:
-        mortar_shoot(target)
-    if button == GLUT_RIGHT_BUTTON and state == GLUT_DOWN:
-        straight_shoot()
-
-def mortar_shoot(target):
-    global bullets,p_pos
-    px, py, pz = p_pos
-    tx, ty = p_pos[0]+200,p_pos[1]+200
-    g = -0.15   # gravity (tune for realism)
-    T = 120        # flight time in frames (higher = slower arc)
-    dx = (tx - px) / T
-    dy = (ty - py) / T
-    dz = (0 - pz - 0.5 * g * (T**2)) / T   # ensures z ends at 0
-
-    bullets.extend([px, py, pz, dx, dy, dz])
-
-def straight_shoot():
-    global bullets, p_pos, p_rot
-    rad = math.radians(p_rot)
-    speed = 2.0
-    x,y,z=p_pos
-    dx,dy,dz= speed * -math.sin(rad), speed * math.cos(rad),1
-    bullets.append(x)
-    bullets.append(y)
-    bullets.append(z)
-    bullets.append(dx)
-    bullets.append(dy)  
-    bullets.append(dz)
-    
-def setupCamera():
-    """
-    Configures the camera's projection and view settings.
-    Uses a perspective projection and positions the camera to look at the target.
-    """
-    glMatrixMode(GL_PROJECTION)  # Switch to projection matrix mode
-    glLoadIdentity()  # Reset the projection matrix
-    # Set up a perspective projection (field of view, aspect ratio, near clip, far clip)
-    gluPerspective(fovY, 1.25, 0.1, 1500) # Think why aspect ration is 1.25?
-    glMatrixMode(GL_MODELVIEW)  # Switch to model-view matrix mode
-    glLoadIdentity()  # Reset the model-view matrix
-
-    # Extract camera position and look-at target
-    x, y, z = camera_pos
-    # Position the camera and set its orientation
-    gluLookAt(x, y, z,  # Camera position
-              0, 0, 0,  # Look-at target
-              0, 0, 1)  # Up vector (z-axis)
-
+# -------------------- BULLETS & ANIMATION --------------------
+def update_bullets(bullets):
+    """Update bullets; each bullet has its own gravity factor g per frame."""
+    new_bullets = []
+    n = len(bullets) // 7
+    for i in range(n):
+        x  = bullets[i*7]     + bullets[i*7+3]
+        y  = bullets[i*7+1]   + bullets[i*7+4]
+        z  = bullets[i*7+2]   + bullets[i*7+5]
+        dx = bullets[i*7+3]
+        dy = bullets[i*7+4]
+        dz = bullets[i*7+5]   + bullets[i*7+6]  # add per-bullet gravity
+        g  = bullets[i*7+6]
+        # Keep while above ground
+        if z >= 0:
+            new_bullets.extend([x, y, z, dx, dy, dz, g])
+    return new_bullets
 
 def animate():
-    global bullets,p_pos,p_rot,miss
+    global tank1, tank2
+    tank1.bullets = update_bullets(tank1.bullets)
+    tank2.bullets = update_bullets(tank2.bullets)
     glutPostRedisplay()
-    x,y,z=p_pos
-    # if cheat==True:
-    #     player_angle+=1
-    #     if player_angle>=360:
-    #         player_angle-=360
-    # if life==0 or miss==10:
-    #     death=True
-    # if grow==True:
-    #     bodyradius += scaleval
-    #     headradius += scaleval * 0.5
-    #     if bodyradius > 30:
-    #         grow = False
-    # else:
-    #     bodyradius -= scaleval
-    #     headradius -= scaleval * 0.5
-    #     if bodyradius < 15:
-    #         grow = True
-    # for i in range(5):
-    #     # Move enemy towards player
-    #     ex = enemy[i*2]ddd
-    #     ey = enemy[i*2+1]
-    #     px, py, pz = player_pos
-    #     speed=0.05
-    #     # Compute angle from enemy to player
-    #     angle = math.atan2(py - ey, px - ex)
-    #     # Move enemy towards player using trig
-    #     ex += speed * math.cos(angle)
-    #     ey += speed * math.sin(angle)
-    #     enemy[i*2] = ex
-    #     enemy[i*2+1] = ey
-    #     if abs(ex - px) < 10 and abs(ey - py) < 10:
-    #         life -= 1
-    #         enemy[i*2] = random.randint(-GRID_LENGTH+10, GRID_LENGTH-10)
-    #         enemy[i*2+1] = random.randint(-GRID_LENGTH+10, GRID_LENGTH-10) 
-    #         enemyflag[i]=False
-    #     if cheat==True:
-    #         rad = math.radians(player_angle)
-    #         xinc=-math.sin(rad)
-    #         yinc=math.cos(rad)
-    #         a,b,c=player_pos
-    #         while -GRID_LENGTH<a+xinc<GRID_LENGTH and -GRID_LENGTH<b+yinc<GRID_LENGTH:
-    #             if abs(ex - a) < 10 and abs(ey - b) < 10 and enemyflag[i]==False:
-    #                 enemyflag[i]=True
-    #                 shoot()
-    #                 break
-    #             a+=xinc
-    #             b+=yinc
-    g = -0.1  # gravity (must match mortar_shoot)
-    new_bullets = []
-    for i in range(len(bullets) // 6):
-        x  = bullets[i*6]   + bullets[i*6+3]
-        y  = bullets[i*6+1] + bullets[i*6+4]
-        z  = bullets[i*6+2] + bullets[i*6+5]
-        dx = bullets[i*6+3]
-        dy = bullets[i*6+4]
-        dz = bullets[i*6+5] + g   # gravity applied
-        if z >= 0:  # still above ground
-            new_bullets.extend([x, y, z, dx, dy, dz])
-        else:
-            miss += 1  # bullet hit the ground
-    bullets = new_bullets
 
+def draw_bullets(bullets, color):
+    glColor3f(*color)
+    n = len(bullets) // 7
+    for i in range(n):
+        glPushMatrix()
+        glTranslatef(bullets[i*7], bullets[i*7+1], bullets[i*7+2])
+        glutSolidCube(5)
+        glPopMatrix()
+
+# -------------------- CAMERA & DISPLAY --------------------
+def setupCamera():
+    glMatrixMode(GL_PROJECTION)
+    glLoadIdentity()
+    gluPerspective(fovY, 1.25, 0.1, 3000)
+    glMatrixMode(GL_MODELVIEW)
+    glLoadIdentity()
+    x, y, z = camera_pos
+    gluLookAt(x, y, z, 0, 0, 0, 0, 0, 1)
 
 def showScreen():
-    """
-    Display function to render the game scene:
-    - Clears the screen and sets up the camera.
-    - Draws everything of the screen
-    """
-    # Clear color and depth buffers
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-    glLoadIdentity()  # Reset modelview matrix
-    glViewport(0, 0, 1000, 800)  # Set viewport size
+    glLoadIdentity()
+    glViewport(0, 0, 1000, 800)
+    setupCamera()
 
-    setupCamera()  # Configure camera perspective
-
-    #draw_maze(10,10)
     draw_grass()
-
-
-
-    # Display game info text at a fixed screen position
-    draw_text(10, 770, f"A Random Fixed Position Text")
-    draw_text(10, 740, f"See how the position and variable change?: {rand_var}")
-
-    
     drawgrid()
     drawwall()
     alltrees()
-    draw_tank()
-    draw_bullet()
-    
-    # Swap buffers for smooth rendering (double buffering)
+
+    # Tanks
+    tank1.draw()
+    tank2.draw()
+
+    # Target markers (mortar landing points)
+    tank1.draw_target_marker()
+    tank2.draw_target_marker()
+
+    # Bullets
+    draw_bullets(tank1.bullets, tank1.bullet_color)
+    draw_bullets(tank2.bullets, tank2.bullet_color)
+
     glutSwapBuffers()
 
+# -------------------- INIT (Depth, Culling, Clear) --------------------
+def init_gl_state():
+    glEnable(GL_DEPTH_TEST)        # fix walls flicker/disappear
+    glDepthFunc(GL_LEQUAL)
+    glClearDepth(1.0)
+    glDisable(GL_CULL_FACE)        # render both sides; safer with custom quads
+    glShadeModel(GL_SMOOTH)
+    glClearColor(0.52, 0.80, 0.92, 1.0)  # sky-ish background
 
-# Main function to set up OpenGL window and loop
+# -------------------- MAIN --------------------
 def main():
     glutInit()
-    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH)  # Double buffering, RGB color, depth test
-    glutInitWindowSize(1000, 800)  # Window size
-    glutInitWindowPosition(0, 0)  # Window position
-    wind = glutCreateWindow(b"3D OpenGL Intro")  # Create the window
-
-    glutDisplayFunc(showScreen)  # Register display function
-    glutKeyboardFunc(keyboardListener)  # Register keyboard listener
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH)
+    glutInitWindowSize(1000, 800)
+    glutInitWindowPosition(0, 0)
+    glutCreateWindow(b"3D OpenGL Tanks - Two Player")
+    init_gl_state()
+    glutDisplayFunc(showScreen)
+    glutKeyboardFunc(keyboardListener)
     glutSpecialFunc(specialKeyListener)
-    glutMouseFunc(mouseListener)
-    glutIdleFunc(animate)  # Register the idle function to move the bullet automatically
-
+    glutIdleFunc(animate)
     grass_init(10, 10)
     treespawn()
-    glutMainLoop()  # Enter the GLUT main loop
+    glutMainLoop()
 
 if __name__ == "__main__":
     main()
