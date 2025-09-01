@@ -820,7 +820,8 @@ def showScreen():
     draw_grass()
     draw_tree()
     draw_powerup()
-    draw_nuke_powerup()
+    if level==2:
+        draw_nuke_powerup()
     draw_nuke()
 
     if gameover:
@@ -909,9 +910,9 @@ def main():
     build_wall_list(maze, 10, 10)
     powerup_pos = spawn_powerup(maze)
     powerup_active = True
-    
-    nuke_powerup_pos = spawn_nuke_powerup(maze)
-    nuke_powerup_active = True
+    if level == 2:  # only last level
+        nuke_powerup_pos = spawn_nuke_powerup(maze)
+        nuke_powerup_active = True
 
     # spawn two tanks in safe positions (consistent radius)
     sx1, sy1 = find_safe_spawn(TANK_RADIUS, 10, 10)
