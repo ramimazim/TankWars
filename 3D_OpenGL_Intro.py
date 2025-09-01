@@ -2,17 +2,192 @@ from OpenGL.GL import *
 from OpenGL.GLUT import *
 from OpenGL.GLU import *
 import math
+import random
+
 # Camera-related variables
-camera_pos = (0,500,500)
+camera_pos = (0,0,500)
 
 fovY = 120  # Field of view
-GRID_LENGTH = 600  # Length of grid lines
+#GRID_LENGTH = 600  # Length of grid lines
+gLen = 100
 rand_var = 423
 p_pos=[0,0,0]
 p_rot=0
 target=[0,0]
 bullets=[]
 miss=0
+level = 0
+
+grassList = []
+
+maze_layout_one = [
+    [1,1,1,1,1,1,1,1,1,1],
+    [1,0,0,0,1,0,0,0,0,1],
+    [1,0,1,0,1,0,1,1,0,1],
+    [1,0,1,0,0,0,0,1,0,1],
+    [1,0,1,1,1,1,0,1,0,1],
+    [1,0,0,0,0,1,0,1,0,1],
+    [1,1,1,1,0,1,0,1,0,1],
+    [1,0,0,1,0,0,0,1,0,1],
+    [1,0,0,0,0,1,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1]
+]
+
+maze_layout_two = [
+    [1,1,1,1,1,1,1,1,1,1],
+    [1,0,0,1,0,0,0,1,0,1],
+    [1,0,1,1,0,1,0,1,0,1],
+    [1,0,1,0,0,1,0,0,0,1],
+    [1,0,1,0,1,1,1,1,0,1],
+    [1,0,0,0,1,0,0,1,0,1],
+    [1,1,1,0,1,0,1,1,0,1],
+    [1,0,0,0,0,0,1,0,0,1],
+    [1,0,1,1,1,0,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1]
+]
+
+maze_layout_three = [
+    [1,1,1,1,1,1,1,1,1,1],
+    [1,0,1,0,0,1,0,0,1,1],
+    [1,0,1,1,0,1,1,0,0,1],
+    [1,0,0,0,0,0,1,1,0,1],
+    [1,1,1,0,1,1,0,1,0,1],
+    [1,0,0,0,1,0,0,1,0,1],
+    [1,0,1,1,1,0,1,1,0,1],
+    [1,0,0,0,0,0,1,0,0,1],
+    [1,1,0,1,1,0,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1]
+]
+
+def grass_init(row, col):
+    global grassList
+
+    if level == 0:
+        maze = maze_layout_one
+    elif level == 1:
+        maze = maze_layout_two
+    else:
+        maze = maze_layout_three
+
+    i = 0
+    while i < 1000:
+        x = random.randint(-600, 400)
+        y = random.randint(-500, 500)
+        g = random.uniform(0.7, 0.9)
+        col_index = int((x + (col//2) * gLen) // gLen)
+        row_index = int(((row//2) * gLen - y) // gLen)
+
+        if 0 <= row_index < row and 0 <= col_index < col:
+            if maze[row_index][col_index] == 0:
+                grassList.append((x-gLen, y, g))
+                i += 1
+
+def draw_grass():
+    for i in grassList:
+        x, y, g = i
+        offset = [0, -5, 5]
+        for j in range(3):
+            h = random.randint(8, 15)
+            glBegin(GL_LINES)
+            glColor3f(0,g,0)
+            glVertex3d(x, y, 0)
+            glVertex3d(x+offset[j], y+offset[j], h)
+            glEnd()
+            
+def draw_maze(row, col):
+
+    gCol = gLen*(col//2)
+    gRow = gLen*(row//2)
+
+    # drawing floor
+    y = 0
+    for j in range(row):
+        x = 0
+        flag = (j % 2 == 0)
+        for i in range(col):
+            glBegin(GL_QUADS)   
+            glColor3f(0.25, 0.6, 0.2)  
+
+            glVertex3f(0-gRow+x, 0+gCol-y, 0)
+            glVertex3f(0-gRow-gLen+x, 0+gCol-y, 0)
+            glVertex3f(0-gRow-gLen+x, 0+gCol-gLen-y, 0)
+            glVertex3f(0-gRow+x, 0+gCol-gLen-y, 0)
+            glEnd()
+
+            x += gLen
+            flag = not flag
+        y += gLen
+
+    # drawing walls
+    draw_walls(gRow, gCol, row)
+
+    # drawing maze
+    if level == 0:
+        draw_layout(maze_layout_one)
+    elif level == 1:
+        draw_layout(maze_layout_two)
+    else:
+        draw_layout(maze_layout_three)
+
+def draw_walls(gRow, gCol, row):
+    x, y = 0, 0
+    glColor3f(0.4, 0.4, 0.45) 
+
+    # left wall
+    glBegin(GL_QUADS)
+    glVertex3f(-gRow-gLen, gCol,  0)
+    glVertex3f(-gRow-gLen, -gCol,  0)
+    glVertex3f(-gRow-gLen, -gCol, 20)
+    glVertex3f(-gRow-gLen,  gCol, 20)
+    glEnd()
+    
+    # top
+    glBegin(GL_QUADS)
+    glVertex3f(-gRow-gLen, gCol,  0)
+    glVertex3f(gRow-gLen, gCol,  0)
+    glVertex3f(gRow-gLen,  gCol, 20)
+    glVertex3f(-gRow-gLen, gCol, 20)  
+    glEnd()
+
+    # bottom
+    glBegin(GL_QUADS)
+    y = gCol - row*gLen
+    glVertex3f(-gRow-gLen,  y,  0)
+    glVertex3f(gRow-gLen, y,  0)
+    glVertex3f(gRow-gLen, y, 20)
+    glVertex3f(-gRow-gLen,  y, 20)
+    glEnd()
+
+    # right
+    glBegin(GL_QUADS)
+    glVertex3f(gRow-gLen, gCol,  0)
+    glVertex3f(gRow-gLen, -gCol,  0)
+    glVertex3f(gRow-gLen,  -gCol, 20)
+    glVertex3f(gRow-gLen, gCol, 20)
+       
+    glEnd()
+
+def draw_layout(maze):
+    glColor3f(0.6, 0.6, 0.65)
+    glBegin(GL_QUADS)
+
+    rows = len(maze)
+    cols = len(maze[0])
+
+    for r in range(rows):
+        for c in range(cols):
+            if maze[r][c] == 1:
+
+                x = (c - cols//2) * gLen
+                y = (rows//2 - r) * gLen
+
+                glVertex3f(x, y, 0)
+                glVertex3f(x - gLen, y, 0)
+                glVertex3f(x - gLen, y - gLen, 0)
+                glVertex3f(x, y - gLen, 0)
+
+    glEnd()
+
 
 def draw_text(x, y, text, font=GLUT_BITMAP_HELVETICA_18):
     glColor3f(1,1,1)
@@ -329,7 +504,8 @@ def showScreen():
 
     setupCamera()  # Configure camera perspective
 
-
+    draw_maze(10,10)
+    draw_grass()
 
 
 
@@ -338,8 +514,8 @@ def showScreen():
     draw_text(10, 740, f"See how the position and variable change?: {rand_var}")
 
 
-    drawgrid()
-    drawwall()
+    #drawgrid()
+    #drawwall()
     draw_tank()
     draw_bullet()
     drawTarget()
@@ -360,6 +536,8 @@ def main():
     glutSpecialFunc(specialKeyListener)
     glutMouseFunc(mouseListener)
     glutIdleFunc(animate)  # Register the idle function to move the bullet automatically
+
+    grass_init(10, 10)
 
     glutMainLoop()  # Enter the GLUT main loop
 
