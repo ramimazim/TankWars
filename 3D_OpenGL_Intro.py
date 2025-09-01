@@ -23,6 +23,8 @@ treeList = []
 wall = []           # AABB list [(xmin,xmax,ymin,ymax), ...]
 cangle = 0
 radius = 500
+powerup_pos = None
+powerup_active = True
 
 # -------------------- MAZES --------------------
 maze_layout_one = [
@@ -76,6 +78,8 @@ class Tank:
         self.target_distance = 300
         self.score = 0
         self.name = name
+        self.double_points = False
+
 
     def muzzle_world_pos(self):
         rad = math.radians(self.rot)
@@ -479,6 +483,36 @@ def bullet_hits_wall(prev_pos, new_pos, z_height):
                 return True
     return False
 
+def spawn_powerup(maze):
+    rows = len(maze)
+    cols = len(maze[0])
+    while True:
+        r = random.randint(0, rows - 1)
+        c = random.randint(0, cols - 1)
+        if maze[r][c] == 0:  # empty space
+            # convert to world coords (center of tile)
+            x = (c - cols // 2) * gLen - gLen / 2
+            y = (rows // 2 - r) * gLen - gLen / 2
+            return (x, y)
+
+def draw_powerup():
+    if powerup_active and powerup_pos:
+        glPushMatrix()
+        glTranslatef(powerup_pos[0], powerup_pos[1], 0)
+        glColor3f(1.0, 1.0, 0.0)  # bright yellow
+        glutSolidCube(gLen / 2)   # or any shape you like
+        glPopMatrix()
+
+def check_powerup_pickup(tank):
+    global powerup_active
+    if powerup_active and powerup_pos:
+        tx, ty, _ = tank.pos
+        px, py = powerup_pos
+        if abs(tx - px) < gLen/2 and abs(ty - py) < gLen/2:
+            tank.double_points = True
+            powerup_active = False
+
+
 # -------------------- HELPERS --------------------
 def draw_target_marker(x, y, z, a, b, c):
     glDisable(GL_LIGHTING)
@@ -578,7 +612,10 @@ def update_bullets(shooter, target):
         # check hit against other tank
         tx, ty, tz = target.pos
         if abs(nx - tx) < hit_radius and abs(ny - ty) < hit_radius and 0 <= nz <= 80:
-            shooter.score += 1
+            if shooter.double_points:
+                shooter.score += 2
+            else:
+                shooter.score += 1
             continue
 
         # keep bullet
@@ -589,6 +626,8 @@ def update_bullets(shooter, target):
 
 def animate():
     global tank1, tank2
+    check_powerup_pickup(tank1)
+    check_powerup_pickup(tank2)
     if tank1 is not None and tank2 is not None:
         update_bullets(tank1, tank2)
         update_bullets(tank2, tank1)
@@ -629,6 +668,7 @@ def showScreen():
     draw_maze(10, 10)
     draw_grass()
     draw_tree()
+    draw_powerup()
 
     if tank1 is not None and tank2 is not None:
         tank1.draw(); tank2.draw()
@@ -683,7 +723,7 @@ def find_safe_spawn(radius, row, col, max_attempts=2000):
 
 # -------------------- MAIN --------------------
 def main():
-    global tank1, tank2
+    global tank1, tank2, powerup_active, powerup_pos
     glutInit()
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH)
     glutInitWindowSize(1000, 800)
@@ -707,6 +747,8 @@ def main():
     else:
         maze = maze_layout_three
     build_wall_list(maze, 10, 10)
+    powerup_pos = spawn_powerup(maze)
+    powerup_active = True
 
     # spawn two tanks in safe positions (consistent radius)
     sx1, sy1 = find_safe_spawn(TANK_RADIUS, 10, 10)
