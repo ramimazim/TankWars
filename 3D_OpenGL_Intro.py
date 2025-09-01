@@ -8,12 +8,51 @@ import random
 camera_pos = (500,0, 200)
 fovY = 120
 GRID_LENGTH = 600
-gLen = 600
+gLen = 300
 level = 0
 grassList = []
 treelist = []
 cangle = 0
 radius = 500
+
+maze_layout_one = [
+    [1,1,1,1,1,1,1,1,1,1],
+    [1,0,0,0,1,0,0,0,0,1],
+    [1,0,1,0,1,0,1,1,0,1],
+    [1,0,1,0,0,0,0,1,0,1],
+    [1,0,1,1,1,1,0,1,0,1],
+    [1,0,0,0,0,1,0,1,0,1],
+    [1,1,1,1,0,1,0,1,0,1],
+    [1,0,0,1,0,0,0,1,0,1],
+    [1,0,0,0,0,1,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1]
+]
+
+maze_layout_two = [
+    [1,1,1,1,1,1,1,1,1,1],
+    [1,0,0,1,0,0,0,1,0,1],
+    [1,0,1,1,0,1,0,1,0,1],
+    [1,0,1,0,0,1,0,0,0,1],
+    [1,0,1,0,1,1,1,1,0,1],
+    [1,0,0,0,1,0,0,1,0,1],
+    [1,1,1,0,1,0,1,1,0,1],
+    [1,0,0,0,0,0,1,0,0,1],
+    [1,0,1,1,1,0,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1]
+]
+
+maze_layout_three = [
+    [1,1,1,1,1,1,1,1,1,1],
+    [1,0,1,0,0,1,0,0,1,1],
+    [1,0,1,1,0,1,1,0,0,1],
+    [1,0,0,0,0,0,1,1,0,1],
+    [1,1,1,0,1,1,0,1,0,1],
+    [1,0,0,0,1,0,0,1,0,1],
+    [1,0,1,1,1,0,1,1,0,1],
+    [1,0,0,0,0,0,1,0,0,1],
+    [1,1,0,1,1,0,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1]
+]
 
 # -------------------- TANK CLASS --------------------
 class Tank:
@@ -133,16 +172,31 @@ tank2 = Tank(color_base=(0, 1, 0), color_turret=(1, 1, 0), bullet_color=(1, 0, 1
 # -------------------- ENVIRONMENT --------------------
 def grass_init(row, col):
     global grassList
-    grassList = []
+
+    if level == 0:
+        maze = maze_layout_one
+    elif level == 1:
+        maze = maze_layout_two
+    else:
+        maze = maze_layout_three
+
+    x_min = -12 * gLen
+    x_max = 8 * gLen
+    y_min = -10 * gLen
+    y_max = 10 * gLen
+
     i = 0
     while i < 1000:
-        # Random position strictly inside the grid
-        x = random.randint(-GRID_LENGTH + 20, GRID_LENGTH - 20)
-        y = random.randint(-GRID_LENGTH + 20, GRID_LENGTH - 20)
+        x = random.randint(x_min, x_max)
+        y = random.randint(y_min, y_max)
         g = random.uniform(0.7, 0.9)
+        col_index = int((x + (col//2) * gLen) // gLen)
+        row_index = int(((row//2) * gLen - y) // gLen)
 
-        grassList.append((x, y, g))
-        i += 1
+        if 0 <= row_index < row and 0 <= col_index < col:
+            if maze[row_index][col_index] == 0:
+                grassList.append((x-gLen, y, g))
+                i += 1
 
 def draw_grass():
     for i in grassList:
@@ -151,10 +205,125 @@ def draw_grass():
         for j in range(3):
             h = random.randint(8, 15)
             glBegin(GL_LINES)
-            glColor3f(0, g, 0)
+            glColor3f(0,g,0)
             glVertex3d(x, y, 0)
-            glVertex3d(x + offset[j], y + offset[j], h)
+            glVertex3d(x+offset[j], y+offset[j], h)
             glEnd()
+            
+def draw_maze(row, col):
+
+    gCol = gLen*(col//2)
+    gRow = gLen*(row//2)
+
+    # drawing floor
+    y = 0
+    for j in range(row):
+        x = 0
+        flag = (j % 2 == 0)
+        for i in range(col):
+            glBegin(GL_QUADS)   
+            glColor3f(0.25, 0.6, 0.2)  
+
+            glVertex3f(0-gRow+x, 0+gCol-y, 0)
+            glVertex3f(0-gRow-gLen+x, 0+gCol-y, 0)
+            glVertex3f(0-gRow-gLen+x, 0+gCol-gLen-y, 0)
+            glVertex3f(0-gRow+x, 0+gCol-gLen-y, 0)
+            glEnd()
+
+            x += gLen
+            flag = not flag
+        y += gLen
+
+    # drawing walls
+    draw_walls(gRow, gCol, row)
+
+    # drawing maze
+    if level == 0:
+        draw_layout(maze_layout_one)
+    elif level == 1:
+        draw_layout(maze_layout_two)
+    else:
+        draw_layout(maze_layout_three)
+
+def draw_walls(gRow, gCol, row):
+    x, y = 0, 0
+    glColor3f(0.4, 0.4, 0.45) 
+
+    # left wall
+    glBegin(GL_QUADS)
+    glVertex3f(-gRow-gLen, gCol,  0)
+    glVertex3f(-gRow-gLen, -gCol,  0)
+    glVertex3f(-gRow-gLen, -gCol, 20)
+    glVertex3f(-gRow-gLen,  gCol, 20)
+    glEnd()
+    
+    # top
+    glBegin(GL_QUADS)
+    glVertex3f(-gRow-gLen, gCol,  0)
+    glVertex3f(gRow-gLen, gCol,  0)
+    glVertex3f(gRow-gLen,  gCol, 20)
+    glVertex3f(-gRow-gLen, gCol, 20)  
+    glEnd()
+
+    # bottom
+    glBegin(GL_QUADS)
+    y = gCol - row*gLen
+    glVertex3f(-gRow-gLen,  y,  0)
+    glVertex3f(gRow-gLen, y,  0)
+    glVertex3f(gRow-gLen, y, 20)
+    glVertex3f(-gRow-gLen,  y, 20)
+    glEnd()
+
+    # right
+    glBegin(GL_QUADS)
+    glVertex3f(gRow-gLen, gCol,  0)
+    glVertex3f(gRow-gLen, -gCol,  0)
+    glVertex3f(gRow-gLen,  -gCol, 20)
+    glVertex3f(gRow-gLen, gCol, 20)
+       
+    glEnd()
+
+def draw_layout(maze):
+    glColor3f(0.6, 0.6, 0.65)
+    glBegin(GL_QUADS)
+
+    rows = len(maze)
+    cols = len(maze[0])
+
+    for r in range(rows):
+        for c in range(cols):
+            if maze[r][c] == 1:
+
+                x = (c - cols//2) * gLen
+                y = (rows//2 - r) * gLen
+
+                glVertex3f(x, y, 50)
+                glVertex3f(x - gLen, y, 50)
+                glVertex3f(x - gLen, y - gLen, 50)
+                glVertex3f(x, y - gLen, 50)
+
+                glVertex3f(x, y, 0)
+                glVertex3f(x - gLen, y, 0)
+                glVertex3f(x - gLen, y, 50)
+                glVertex3f(x, y, 50)
+
+                glVertex3f(x, y - gLen, 0)
+                glVertex3f(x - gLen, y - gLen, 0)
+                glVertex3f(x - gLen, y - gLen, 50)
+                glVertex3f(x, y - gLen, 50)
+
+                glVertex3f(x - gLen, y, 0)
+                glVertex3f(x - gLen, y - gLen, 0)
+                glVertex3f(x - gLen, y - gLen, 50)
+                glVertex3f(x - gLen, y, 50)
+
+                glVertex3f(x, y, 0)
+                glVertex3f(x, y - gLen, 0)
+                glVertex3f(x, y - gLen, 50)
+                glVertex3f(x, y, 50)
+
+
+    glEnd()
 
 def drawgrid():
     tsize = 45
@@ -170,33 +339,6 @@ def drawgrid():
             glVertex3f(i + tsize, j + tsize, 0)
             glVertex3f(i, j + tsize, 0)
             glEnd()
-
-def drawwall():
-    wall_height = 100
-    L = -GRID_LENGTH
-    R =  GRID_LENGTH
-    B = -GRID_LENGTH
-    T =  GRID_LENGTH
-
-    glColor3f(0.3, 0.3, 0.35)
-    glBegin(GL_QUADS)
-    glVertex3f(L, B, 0); glVertex3f(L, T, 0); glVertex3f(L, T, wall_height); glVertex3f(L, B, wall_height)
-    glEnd()
-
-    glColor3f(0.35, 0.35, 0.4)
-    glBegin(GL_QUADS)
-    glVertex3f(R, T, 0); glVertex3f(R, B, 0); glVertex3f(R, B, wall_height); glVertex3f(R, T, wall_height)
-    glEnd()
-
-    glColor3f(0.4, 0.4, 0.45)
-    glBegin(GL_QUADS)
-    glVertex3f(L, T, 0); glVertex3f(R, T, 0); glVertex3f(R, T, wall_height); glVertex3f(L, T, wall_height)
-    glEnd()
-
-    glColor3f(0.45, 0.45, 0.5)
-    glBegin(GL_QUADS)
-    glVertex3f(R, B, 0); glVertex3f(L, B, 0); glVertex3f(L, B, wall_height); glVertex3f(R, B, wall_height)
-    glEnd()
 
 def draw_tree(x=0, y=0, z=0, scale=2):
     glPushMatrix()
@@ -343,9 +485,9 @@ def showScreen():
     setupCamera()
     draw_text(10, 730, f"Player 1(Blue) score: {tank1.score}")
     draw_text(10, 700, f'Player 2(Green) score: {tank2.score}')
+    draw_maze(10, 10)
+    #drawgrid()
     draw_grass()
-    drawgrid()
-    drawwall()
     alltrees()
 
     tank1.draw(); tank2.draw()
